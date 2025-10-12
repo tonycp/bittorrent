@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "inputs": [
+        {
+            "id": "dir",
+            "type": "pickString",
+            "description": "selecciona la direccion",
+            "options": [
+                "client",
+                "tracker",
+            ],
+            "default": "tracker"
+        },
+    ],
+    "tasks": [
+    ]
+}

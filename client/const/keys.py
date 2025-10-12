@@ -1,0 +1,5 @@
+CREATE_KEY = "Create"
+UPDATE_KEY = "Update"
+DELETE_KEY = "Delete"
+GET_KEY = "Get"
+GETALL_KEY = "GetAll"
