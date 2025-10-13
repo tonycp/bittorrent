@@ -1,3 +1,4 @@
+import socket
 from dotenv import load_dotenv
 
 from src.handlers.tracker import TrackerController
@@ -8,10 +9,7 @@ from src.const import *
 
 
 def start_server(middleware: DBM, settings: Dict[str, Any]) -> None:
-    address = (
-        settings.get("TRACKER_HOST", "0.0.0.0"),
-        int(settings.get("TRACKER_PORT", 8000)),
-    )
+    address = (settings[TRK_HOST], int(settings[TRK_PORT]))
 
     server = ThreadedServer(address, TrackerHandler, middleware=middleware)
     print(f"BitTorrent tracker activo en {address}")
@@ -25,7 +23,9 @@ def start_server(middleware: DBM, settings: Dict[str, Any]) -> None:
 
 def main():
     load_dotenv()
-    settings = get_settings()
+    hostname = socket.gethostname()
+    ip = socket.gethostbyname(hostname)
+    settings = get_settings({TRK_HOST: ip})
 
     db_manager = DatabaseManager(settings[DB_URL])
     db_manager.init_db(Entity.metadata)
