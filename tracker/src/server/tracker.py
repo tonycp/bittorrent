@@ -1,5 +1,5 @@
 from socketserver import BaseRequestHandler, ThreadingMixIn, TCPServer
-from typing import Any, Dict, List, Type
+from typing import Any, Dict
 
 from ..repos.middleware import DBM
 from socket import SocketType

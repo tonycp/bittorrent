@@ -1,6 +1,6 @@
 import tkinter as tk
 
-from ..styles.container import container_
+from .styles.container import container_
 
 
 class SourcePanel(tk.Frame):

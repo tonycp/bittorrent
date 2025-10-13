@@ -8,6 +8,4 @@ COPY uv.lock pyproject.toml /app/
 
 RUN uv sync
 
-COPY . /app/
-
-CMD ["python", "app.py"]
+CMD ["python", "main.py"]

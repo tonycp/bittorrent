@@ -1,10 +1,10 @@
 from dotenv import load_dotenv
 
-from .handlers.tracker import TrackerController
-from .server.tracker import ThreadedServer, TrackerHandler
-from .repos import DatabaseManager, DBM
-from .schema import *
-from .const import *
+from src.handlers.tracker import TrackerController
+from src.server.tracker import ThreadedServer, TrackerHandler
+from src.repos import DatabaseManager, DBM
+from src.schema import *
+from src.const import *
 
 
 def start_server(middleware: DBM, settings: Dict[str, Any]) -> None:

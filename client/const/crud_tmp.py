@@ -1,5 +1,5 @@
-from .keys import *
-from .bsc_tmp import get_grud_template
+from keys import *
+from bsc_tmp import get_grud_template
 
 
 CREATE_TEMPLATE = get_grud_template(CREATE_KEY)

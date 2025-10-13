@@ -1,1 +1,1 @@
-from .client import BitTorrentClient
+from client import BitTorrentClient

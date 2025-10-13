@@ -4,8 +4,8 @@ from tkinter import messagebox
 from tkinter import ttk
 from typing import List
 
-from .widgets import *
-from .styles.container import container_
+from widgets import *
+from styles.container import container_
 
 
 class BitTorrentClient(tk.Tk):
