@@ -1,4 +1,4 @@
 # Environment variable names
 DB_URL = "DATABASE_URL"
 TRK_HOST = "TRACKER_HOST"
-TRK_PORT = "TRK_PORT"
+TRK_PORT = "TRACKER_PORT"

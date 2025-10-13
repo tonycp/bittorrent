@@ -1,7 +1,7 @@
 from os import getenv
 from typing import Any, Dict
 
-from .default import *
+from .env_def import *
 from .env import *
 
 

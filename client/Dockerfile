@@ -1,11 +1,11 @@
 FROM python:3.11-slim
 
-WORKDIR /app
-
 RUN pip install uv
 
-COPY uv.lock pyproject.toml /app/
+COPY .python-version pyproject.toml uv.lock /app/
 
-RUN uv sync
+RUN uv --project app sync --no-managed-python
 
-CMD ["python", "main.py"]
+COPY main.py README.md /app/
+
+CMD ["uv", "--directory", "app", "run", "main.py"]
