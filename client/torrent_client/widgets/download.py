@@ -23,10 +23,13 @@ class DownloadPanel(ttk.Treeview):
         self.heading("size", text="Tamaño")
 
         # Opcional: definir anchura de columnas
-        self.column("name", width=200)
-        self.column("progress", width=80, anchor="center")
-        self.column("status", width=100, anchor="center")
-        # ... sigue con las demás columnas
+        self.column("name", width=180, minwidth=100, anchor="w", stretch=True)
+        self.column("progress", width=70, minwidth=50, anchor="center", stretch=True)
+        self.column("status", width=90, minwidth=60, anchor="center", stretch=True)
+        self.column("speed", width=80, minwidth=60, anchor="center", stretch=True)
+        self.column("seeds", width=60, minwidth=40, anchor="center", stretch=True)
+        self.column("peers", width=60, minwidth=40, anchor="center", stretch=True)
+        self.column("size", width=90, minwidth=60, anchor="e", stretch=True)
 
         self.pack(fill=tk.BOTH, expand=True)
 
@@ -44,6 +47,23 @@ class DownloadPanel(ttk.Treeview):
                 info["size"],
             ),
         )
+
+    def update_download(self, info_hash, new_info):
+        for item in self.get_children():
+            if self.item(item, "values")[0] == info_hash:
+                self.item(
+                    item,
+                    values=(
+                        new_info["name"],
+                        new_info["progress"],
+                        new_info["status"],
+                        new_info["speed"],
+                        new_info["seeds"],
+                        new_info["peers"],
+                        new_info["size"],
+                    ),
+                )
+                break
 
     def parse_tracker_to_panel(tracker_data, total_size):
         progress = int(100 * (total_size - tracker_data["left"]) / total_size)

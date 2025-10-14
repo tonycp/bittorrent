@@ -7,7 +7,9 @@ requires-python = ">=3.13"
 dependencies = [
     "aiohttp>=3.12.15",
     "asyncio>=4.0.0",
+    "bencodepy>=0.9.5",
     "docker>=7.1.0",
+    "dotenv>=0.9.9",
     "logging>=0.4.9.6",
     "matplotlib>=3.10.6",
     "tk>=0.1.0",

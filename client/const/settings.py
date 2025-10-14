@@ -17,3 +17,19 @@ def get_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
             getenv_map[key] = value
 
     return getenv_map
+
+# import bencodepy
+# import hashlib
+
+
+# def load_torrent(filepath):
+#     # Leer y decodificar .torrent
+#     with open(filepath, "rb") as f:
+#         torrent_data = bencodepy.decode(f.read())
+#     info = torrent_data[b"info"]
+#     name = info[b"name"]
+#     if isinstance(name, bytes):
+#         name = name.decode()
+#     info_encoded = bencodepy.encode(info)
+#     info_hash = hashlib.sha1(info_encoded).hexdigest()
+#     return get_torrent_info_template(info_hash, name)

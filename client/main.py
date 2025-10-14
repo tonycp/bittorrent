@@ -3,12 +3,11 @@ from dotenv import load_dotenv
 from const import *
 from torrent_client.client import BitTorrentClient
 
-# Load environment variables from env file
-load_dotenv()
-
 
 def main():
+    load_dotenv()
     settings = get_settings()
+
     app = BitTorrentClient()
     app.mainloop()
 
