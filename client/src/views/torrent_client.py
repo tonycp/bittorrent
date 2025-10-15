@@ -3,11 +3,11 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import List
 
-from ..torrent_client.widgets import *
-from ..torrent_client.styles.container import container_
+from . import *
+from . import container_
 
 
-from ..torrent_client.config_manager import ConfigManager
+from .config_manager import ConfigManager
 
 class BitTorrentClientGUI:
     def __init__(self, root):

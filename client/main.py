@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 
-from const import *
-from torrent_client.client import BitTorrentClient
+from src.const import *
+from src.views.client import BitTorrentClient
 
 
 def main():
