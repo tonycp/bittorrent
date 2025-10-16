@@ -125,5 +125,18 @@ class Protocol:
     @staticmethod
     def create_keepalive() -> Dict[str, Any]:
         return Protocol.create_message(
-            "TrackerController", Protocol.COMMANDS["UPDATE"], func="keepalive"
+            "TrackerController",
+            Protocol.COMMANDS["UPDATE"],
+            func="keepalive",
+        )
+
+    @staticmethod
+    def create_peer_list(info_hash: str) -> Dict[str, Any]:
+        return Protocol.create_message(
+            "TrackerController",
+            Protocol.COMMANDS["GET"],
+            func="peer_list",
+            args={
+                "info_hash": info_hash,
+            },
         )

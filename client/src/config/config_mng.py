@@ -57,6 +57,13 @@ class ConfigManager:
     def get_download_path(self):
         return self.get(GENERAL, DL_PATH)
 
+    def get_torrent_path(self):
+        return self.get(GENERAL, TN_PATH)
+
+    def get_tracker_address(self):
+        ip, port = self.get(GENERAL, TK_URL).split(":")
+        return ip, int(port)
+
     def get_listen_port(self):
         value = self.get(GENERAL, LT_PORT)
         return int(value) if value else 6881

@@ -1,4 +1,4 @@
-import tkinter as tk
+import os, tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from ..config.config_mng import ConfigManager
 from ..core.torrent_client import TorrentClient
@@ -158,7 +158,7 @@ class BitTorrentClientGUI:
     def open_settings(self):
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Configuración del Cliente")
-        settings_window.geometry("650x500")
+        settings_window.geometry("650x550")
         settings_window.resizable(False, False)
 
         main_frame = ttk.Frame(settings_window, padding="20")
@@ -179,10 +179,13 @@ class BitTorrentClientGUI:
         )
         general_label.grid(row=2, column=0, sticky=tk.W, pady=(0, 10))
 
+        # Carpeta de Descargas
         ttk.Label(main_frame, text="Carpeta de Descargas:").grid(
             row=3, column=0, sticky=tk.W, pady=8
         )
-        download_path_var = tk.StringVar(value=self.config_manager.get_download_path())
+        download_path_var = tk.StringVar(
+            value=self.config_manager.get("General", "download_path")
+        )
         path_entry = ttk.Entry(main_frame, textvariable=download_path_var, width=45)
         path_entry.grid(row=3, column=1, pady=8, padx=(10, 5))
         browse_btn = ttk.Button(
@@ -192,102 +195,183 @@ class BitTorrentClientGUI:
         )
         browse_btn.grid(row=3, column=2, padx=5)
 
+        # Carpeta de Torrents
+        ttk.Label(main_frame, text="Carpeta de Torrents (.p2p):").grid(
+            row=4, column=0, sticky=tk.W, pady=8
+        )
+        torrent_path_var = tk.StringVar(
+            value=self.config_manager.get("General", "torrent_path")
+        )
+        torrent_path_entry = ttk.Entry(
+            main_frame, textvariable=torrent_path_var, width=45
+        )
+        torrent_path_entry.grid(row=4, column=1, pady=8, padx=(10, 5))
+        browse_torrent_btn = ttk.Button(
+            main_frame,
+            text="📁 Buscar",
+            command=lambda: self.browse_folder(torrent_path_var, settings_window),
+        )
+        browse_torrent_btn.grid(row=4, column=2, padx=5)
+
         separator2 = ttk.Separator(main_frame, orient="horizontal")
-        separator2.grid(row=4, column=0, columnspan=3, sticky="ew", pady=15)
+        separator2.grid(row=5, column=0, columnspan=3, sticky="ew", pady=15)
 
         network_label = ttk.Label(
             main_frame, text="Red y Conexión", font=("TkDefaultFont", 10, "bold")
         )
-        network_label.grid(row=5, column=0, sticky=tk.W, pady=(0, 10))
+        network_label.grid(row=6, column=0, sticky=tk.W, pady=(0, 10))
 
+        # Puerto de Escucha
         ttk.Label(main_frame, text="Puerto de Escucha:").grid(
-            row=6, column=0, sticky=tk.W, pady=8
+            row=7, column=0, sticky=tk.W, pady=8
         )
-        port_var = tk.StringVar(value=str(self.config_manager.get_listen_port()))
+        port_var = tk.StringVar(
+            value=str(self.config_manager.get("General", "listen_port"))
+        )
         port_entry = ttk.Entry(main_frame, textvariable=port_var, width=45)
         port_entry.grid(
-            row=6, column=1, pady=8, padx=(10, 5), columnspan=2, sticky=tk.W
+            row=7, column=1, pady=8, padx=(10, 5), columnspan=2, sticky=tk.W
         )
         ttk.Label(
             main_frame, text="(Rango recomendado: 6881-6889)", foreground="gray"
-        ).grid(row=7, column=1, sticky=tk.W, padx=(10, 0))
+        ).grid(row=8, column=1, sticky=tk.W, padx=(10, 0))
+
+        # Dirección del Tracker
+        ttk.Label(main_frame, text="Dirección del Tracker (ip:puerto):").grid(
+            row=9, column=0, sticky=tk.W, pady=8
+        )
+
+        tracker_ip, tracker_port = self.config_manager.get_tracker_address()
+
+        # Crea un subframe para los campos tracker_ip y tracker_port
+        tracker_frame = ttk.Frame(main_frame)
+        tracker_frame.grid(row=9, column=1, sticky=tk.W, padx=(10, 5), columnspan=2)
+
+        ttk.Label(tracker_frame, text="IP:").pack(side=tk.LEFT, padx=(0, 2))
+        tracker_ip_var = tk.StringVar(value=tracker_ip)
+        tracker_ip_entry = ttk.Entry(
+            tracker_frame, textvariable=tracker_ip_var, width=14
+        )
+        tracker_ip_entry.pack(side=tk.LEFT)
+
+        tracker_port_var = tk.StringVar(value=tracker_port)
+        ttk.Label(tracker_frame, text="Puerto:").pack(side=tk.LEFT, padx=(12, 2))
+        tracker_port_entry = ttk.Entry(
+            tracker_frame, textvariable=tracker_port_var, width=6
+        )
+        tracker_port_entry.pack(side=tk.LEFT)
 
         separator3 = ttk.Separator(main_frame, orient="horizontal")
-        separator3.grid(row=8, column=0, columnspan=3, sticky="ew", pady=15)
+        separator3.grid(row=10, column=0, columnspan=3, sticky="ew", pady=15)
 
         bandwidth_label = ttk.Label(
             main_frame, text="Ancho de Banda", font=("TkDefaultFont", 10, "bold")
         )
-        bandwidth_label.grid(row=9, column=0, sticky=tk.W, pady=(0, 10))
+        bandwidth_label.grid(row=11, column=0, sticky=tk.W, pady=(0, 10))
 
         ttk.Label(main_frame, text="Límite de Descarga (KB/s):").grid(
-            row=10, column=0, sticky=tk.W, pady=8
+            row=12, column=0, sticky=tk.W, pady=8
         )
         download_limit_var = tk.StringVar(
-            value=str(self.config_manager.get_max_download_rate())
+            value=str(self.config_manager.get("General", "max_download_rate"))
         )
         dl_entry = ttk.Entry(main_frame, textvariable=download_limit_var, width=45)
-        dl_entry.grid(row=10, column=1, pady=8, padx=(10, 5), columnspan=2, sticky=tk.W)
+        dl_entry.grid(row=12, column=1, pady=8, padx=(10, 5), columnspan=2, sticky=tk.W)
         ttk.Label(main_frame, text="(0 = sin límite)", foreground="gray").grid(
-            row=11, column=1, sticky=tk.W, padx=(10, 0)
+            row=13, column=1, sticky=tk.W, padx=(10, 0)
         )
 
         ttk.Label(main_frame, text="Límite de Subida (KB/s):").grid(
-            row=12, column=0, sticky=tk.W, pady=8
+            row=14, column=0, sticky=tk.W, pady=8
         )
         upload_limit_var = tk.StringVar(
-            value=str(self.config_manager.get_max_upload_rate())
+            value=str(self.config_manager.get("General", "max_upload_rate"))
         )
         ul_entry = ttk.Entry(main_frame, textvariable=upload_limit_var, width=45)
-        ul_entry.grid(row=12, column=1, pady=8, padx=(10, 5), columnspan=2, sticky=tk.W)
+        ul_entry.grid(row=14, column=1, pady=8, padx=(10, 5), columnspan=2, sticky=tk.W)
         ttk.Label(main_frame, text="(0 = sin límite)", foreground="gray").grid(
-            row=13, column=1, sticky=tk.W, padx=(10, 0)
+            row=15, column=1, sticky=tk.W, padx=(10, 0)
         )
 
         def save_settings():
             try:
                 download_path = download_path_var.get().strip()
+                torrent_path = torrent_path_var.get().strip()
                 port = port_var.get().strip()
+                tracker_ip = tracker_ip_var.get().strip()
+                tracker_port = tracker_port_var.get().strip()
                 download_limit = download_limit_var.get().strip()
                 upload_limit = upload_limit_var.get().strip()
 
                 if not download_path:
                     messagebox.showwarning(
-                        "Advertencia", "Debe especificar una carpeta de descargas"
+                        "Advertencia", "Debe especificar una carpeta de descargas."
                     )
                     return
-
+                if not torrent_path:
+                    messagebox.showwarning(
+                        "Advertencia", "Debe especificar la carpeta de torrents (.p2p)."
+                    )
+                    return
+                if not tracker_ip:
+                    messagebox.showwarning(
+                        "Advertencia", "Debe especificar la IP del tracker."
+                    )
+                    return
+                if not tracker_port:
+                    messagebox.showwarning(
+                        "Advertencia", "Debe especificar el puerto del tracker."
+                    )
+                    return
                 try:
-                    port_num = int(port)
-                    if port_num < 1024 or port_num > 65535:
+                    tracker_port_int = int(tracker_port)
+                    if tracker_port_int < 1 or tracker_port_int > 65535:
                         messagebox.showwarning(
-                            "Advertencia", "El puerto debe estar entre 1024 y 65535"
+                            "Advertencia",
+                            "El puerto del tracker debe estar entre 1 y 65535.",
                         )
                         return
                 except ValueError:
                     messagebox.showwarning(
-                        "Advertencia", "El puerto debe ser un número válido"
+                        "Advertencia", "El puerto del tracker debe ser numérico."
                     )
                     return
-
+                try:
+                    port_num = int(port)
+                    if port_num < 1024 or port_num > 65535:
+                        messagebox.showwarning(
+                            "Advertencia", "El puerto debe estar entre 1024 y 65535."
+                        )
+                        return
+                except ValueError:
+                    messagebox.showwarning(
+                        "Advertencia", "El puerto debe ser un número válido."
+                    )
+                    return
                 try:
                     int(download_limit)
                     int(upload_limit)
                 except ValueError:
                     messagebox.showwarning(
                         "Advertencia",
-                        "Los límites de velocidad deben ser números válidos",
+                        "Los límites de velocidad deben ser números válidos.",
                     )
                     return
 
+                os.makedirs(download_path, exist_ok=True)
+                os.makedirs(torrent_path, exist_ok=True)
+                tracker_address = f"{tracker_ip}:{tracker_port}"
+
                 self.config_manager.set("General", "download_path", download_path)
+                self.config_manager.set("General", "torrent_path", torrent_path)
                 self.config_manager.set("General", "listen_port", port)
+                self.config_manager.set("General", "tracker_address", tracker_address)
                 self.config_manager.set("General", "max_download_rate", download_limit)
                 self.config_manager.set("General", "max_upload_rate", upload_limit)
 
                 self.torrent_client.setup_session()
 
-                messagebox.showinfo("Éxito", "Configuración guardada correctamente")
+                messagebox.showinfo("Éxito", "Configuración guardada correctamente.")
                 settings_window.destroy()
             except Exception as e:
                 messagebox.showerror(
@@ -295,16 +379,16 @@ class BitTorrentClientGUI:
                 )
 
         separator4 = ttk.Separator(main_frame, orient="horizontal")
-        separator4.grid(row=14, column=0, columnspan=3, sticky="ew", pady=15)
+        separator4.grid(row=16, column=0, columnspan=3, sticky="ew", pady=15)
 
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=15, column=0, columnspan=3, pady=(10, 0))
+        button_frame.grid(row=17, column=0, columnspan=3, pady=(10, 0))
 
         ttk.Button(
-            button_frame, text="💾 Guardar", command=save_settings, width=15
+            button_frame, text="❌ Cancelar", command=settings_window.destroy, width=15
         ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
-            button_frame, text="❌ Cancelar", command=settings_window.destroy, width=15
+            button_frame, text="💾 Guardar", command=save_settings, width=15
         ).pack(side=tk.LEFT, padx=5)
 
     def browse_folder(self, var, parent_window):
@@ -331,20 +415,23 @@ class BitTorrentClientGUI:
 
         if filename:
             try:
+                address = self.config_manager.get_tracker_address()
                 torrent_file, torrent_data = (
-                    self.torrent_client.file_manager.create_torrent_file(filename)
+                    self.torrent_client.file_manager.create_torrent_file(
+                        filename, address
+                    )
                 )
 
                 msg = f"Torrent creado exitosamente:\n\n"
-                msg += f"Archivo: {torrent_data['file_name']}\n"
-                msg += f"Tamaño: {torrent_data['file_size'] / (1024*1024):.2f} MB\n"
-                msg += f"Chunks: {torrent_data['total_chunks']}\n"
-                msg += f"Hash: {torrent_data['file_hash'][:16]}...\n\n"
+                msg += f"Archivo: {torrent_data.file_name}\n"
+                msg += f"Tamaño: {torrent_data.file_size / (1024*1024):.2f} MB\n"
+                msg += f"Chunks: {torrent_data.total_chunks}\n"
+                msg += f"Hash: {torrent_data.file_hash[:16]}...\n\n"
                 msg += f"Archivo torrent guardado en:\n{torrent_file}"
 
                 messagebox.showinfo("Torrent Creado", msg)
                 self.status_message.config(
-                    text=f"Torrent creado: {torrent_data['file_name']}"
+                    text=f"Torrent creado: {torrent_data.file_name}"
                 )
             except Exception as e:
                 messagebox.showerror("Error", f"Error al crear torrent: {str(e)}")
@@ -406,68 +493,77 @@ class BitTorrentClientGUI:
 
     def pause_selected(self):
         selected = self.tree.selection()
-        if selected:
-            index = self.tree.index(selected[0])
-            handles = self.torrent_client.get_all_torrents()
-            if index < len(handles):
-                self.torrent_client.pause_torrent(handles[index])
-                self.status_message.config(text="Torrent pausado")
+        if not selected:
+            return
+
+        func = self.torrent_client.pause_torrent
+        self._selected_action(selected, func, msg="Torrents pausados")
 
     def resume_selected(self):
         selected = self.tree.selection()
-        if selected:
-            index = self.tree.index(selected[0])
-            handles = self.torrent_client.get_all_torrents()
-            if index < len(handles):
-                self.torrent_client.resume_torrent(handles[index])
-                self.status_message.config(text="Torrent reanudado")
+        if not selected:
+            return
+
+        func = self.torrent_client.resume_torrent
+        self._selected_action(selected, func, msg="Torrents reanudados")
 
     def remove_selected(self):
         selected = self.tree.selection()
-        if selected:
-            if messagebox.askyesno(
-                "Confirmar", "¿Desea eliminar el torrent seleccionado?"
-            ):
-                index = self.tree.index(selected[0])
-                handles = self.torrent_client.get_all_torrents()
-                if index < len(handles):
-                    self.torrent_client.remove_torrent(handles[index])
-                    self.status_message.config(text="Torrent eliminado")
+        if not selected:
+            return
+
+        if not messagebox.askyesno(
+            "Confirmar", f"¿Desea eliminar {len(selected)} torrents seleccionados?"
+        ):
+            return
+
+        func = lambda x: {
+            self.torrent_client.remove_torrent(x),
+            self.tree.delete(x),
+        }
+        self._selected_action(
+            selected, func, msg=f"Torrents eliminados: {len(selected)}"
+        )
+
+    def _selected_action(self, selected, action, msg=None):
+        for iid in selected:
+            action(iid)
+
+        if msg:
+            self.status_message.config(text=msg)
 
     def update_torrents(self):
         try:
             handles = self.torrent_client.get_all_torrents()
-
-            for item in self.tree.get_children():
-                self.tree.delete(item)
 
             total_download = 0
             total_upload = 0
             total_peers = 0
             active_torrents = 0
 
-            for handle in handles:
+            for iid, handle in handles.items():
                 status = self.torrent_client.get_status(handle)
-
-                total_download += status["download_rate"]
-                total_upload += status["upload_rate"]
-                total_peers += status["num_peers"]
-
-                if status["download_rate"] > 0 or status["upload_rate"] > 0:
-                    active_torrents += 1
-
-                self.tree.insert(
-                    "",
-                    tk.END,
-                    values=(
-                        status["name"],
-                        f"{status['progress']:.1f}%",
-                        f"{status['download_rate']:.1f}",
-                        f"{status['upload_rate']:.1f}",
-                        f"{status['num_peers']}/{status['num_seeds']}",
-                        status["state"],
-                    ),
+                values = (
+                    status["name"],
+                    f"{status['progress']:.1f}%",
+                    f"{status['download_rate']:.1f}",
+                    f"{status['upload_rate']:.1f}",
+                    f"{status['num_peers']}/{status['num_seeds']}",
+                    status["state"],
                 )
+
+                if self.tree.exists(iid):
+                    self.tree.item(
+                        iid,
+                        values=values,
+                    )
+                else:
+                    self.tree.insert(
+                        "",
+                        tk.END,
+                        iid=iid,
+                        values=values,
+                    )
 
             num_torrents = len(handles)
             self.torrents_label.config(

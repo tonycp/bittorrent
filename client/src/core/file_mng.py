@@ -1,20 +1,30 @@
+from dataclasses import asdict
 import os
 import hashlib
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..interface import FileDownloader, TorrentData, DownloadProgress, ChunkInfo
+from ..connection.network import NetworkManager
+from .file_downloader import FileDownloader
+from ..interface import TorrentData, DownloadProgress, ChunkInfo
+from ..const import TK_URL
 
 
 class FileManager:
     CHUNK_SIZE = 256 * 1024
 
-    def __init__(self, download_path: str):
+    def __init__(
+        self,
+        download_path: str,
+        torrent_path: str,
+    ):
         self.download_path = download_path
+        self.torrent_path = torrent_path
         self.files: Dict[str, TorrentData] = {}
         self.active_downloads: Dict[str, FileDownloader] = {}
         self.load_state()
 
+        os.makedirs(torrent_path, exist_ok=True)
         os.makedirs(self.download_path, exist_ok=True)
 
     @staticmethod
@@ -53,7 +63,9 @@ class FileManager:
             file_downloader = FileDownloader(**value)
             self.active_downloads[key] = file_downloader
 
-    def create_torrent_file(self, file_path: str) -> Tuple[str, TorrentData]:
+    def create_torrent_file(
+        self, file_path: str, address: Tuple[str, int]
+    ) -> Tuple[str, TorrentData]:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Archivo no encontrado: {file_path}")
 
@@ -71,18 +83,21 @@ class FileManager:
                 info = ChunkInfo(i, len(chunk_data), chunk_hash)
                 chunks_info.append(info)
 
+        address_str = f"{address[0]}:{address[1]}"
         torrent_data = TorrentData(
             file_name,
             file_size,
             file_hash,
             self.CHUNK_SIZE,
             total_chunks,
+            address_str,
             chunks_info,
         )
 
-        torrent_file = f"{file_path}.p2p"
+        path = os.path.join(self.torrent_path, os.path.basename(file_path))
+        torrent_file = f"{path}.p2p"
         with open(torrent_file, "w") as f:
-            json.dump(torrent_data, f, indent=2)
+            json.dump(asdict(torrent_data), f, indent=2)
 
         return torrent_file, torrent_data
 
@@ -91,7 +106,13 @@ class FileManager:
             raise FileNotFoundError(f"Archivo torrent no encontrado: {torrent_path}")
 
         with open(torrent_path, "r") as f:
-            raw = json.load(f)
+            raw: Dict[str, Any] = json.load(f)
+
+        # Adaptar tracker_address si es necesario
+        address_raw = raw.get(TK_URL, "")
+        if isinstance(address_raw, str) and ":" in address_raw:
+            ip, port = address_raw.split(":")
+            raw[TK_URL] = (ip, int(port))
 
         try:
             torrent_data = TorrentData(**raw)
@@ -131,11 +152,12 @@ class FileManager:
             print(f"Error escribiendo chunk {chunk_id}: {e}")
             return False
 
-    def start_download(self, torrent_data: TorrentData) -> str:
+    def start_download(
+        self, torrent_data: TorrentData, network_manager: NetworkManager
+    ) -> str:
         file_hash = torrent_data.file_hash
         file_name = torrent_data.file_name
         file_size = torrent_data.file_size
-        total_chunks = torrent_data.total_chunks
 
         file_path = os.path.join(self.download_path, file_name)
 
@@ -144,13 +166,7 @@ class FileManager:
             f.write(b"\0")
 
         self.active_downloads[file_hash] = FileDownloader(
-            file_path,
-            file_name,
-            file_size,
-            total_chunks,
-            torrent_data,
-            set(),
-            0,
+            file_path, torrent_data, network_manager
         )
 
         return file_hash

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Tuple
 
 from .chunk_info import ChunkInfo
 
@@ -11,4 +11,5 @@ class TorrentData:
     file_hash: str
     chunk_size: int
     total_chunks: int
+    tracker_addres: Tuple[str, int]
     chunks: List[ChunkInfo] = field(default_factory=list)

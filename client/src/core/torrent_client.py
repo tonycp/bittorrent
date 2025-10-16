@@ -1,6 +1,8 @@
 import os, time, uuid, threading
 from typing import Any, Dict, List, Set
 
+from client.src.core.file_downloader import FileDownloader
+
 from ..connection.peer_conn import PeerConnection
 
 from ..config.config_mng import ConfigManager
@@ -20,7 +22,8 @@ class TorrentClient:
         )
 
         self.file_manager: FileManager = FileManager(
-            self.config_manager.get_download_path()
+            self.config_manager.get_download_path(),
+            self.config_manager.get_torrent_path(),
         )
 
         self.downloads: Dict[str, Download] = {}
@@ -84,7 +87,7 @@ class TorrentClient:
 
                 progress_info = self.file_manager.get_download_progress(file_hash)
                 if progress_info:
-                    download.progress = progress_info["progress"]
+                    download.progress = progress_info.progress
 
                 if self.file_manager.is_download_complete(file_hash):
                     download.state = "seeding"
@@ -116,17 +119,16 @@ class TorrentClient:
         for file_hash, download in self.downloads.items():
             progress_info = self.file_manager.get_download_progress(file_hash)
             if progress_info:
-                download.progress = progress_info["progress"]
+                download.progress = progress_info.progress
 
                 time_diff: float = current_time - download.last_update
                 if time_diff > 0:
                     bytes_diff: int = (
-                        progress_info["downloaded_size"]
-                        - download.bytes_downloaded_last
+                        progress_info.downloaded_size - download.bytes_downloaded_last
                     )
                     download.download_rate = (bytes_diff / time_diff) / 1024
 
-                    download.bytes_downloaded_last = progress_info["downloaded_size"]
+                    download.bytes_downloaded_last = progress_info.downloaded_size
                     download.last_update = current_time
 
             download.num_peers = len(self.network_manager.get_connected_peers())
@@ -151,9 +153,9 @@ class TorrentClient:
 
     def add_torrent(self, torrent_path: str) -> Download:
         torrent_data = self.file_manager.load_torrent_file(torrent_path)
-        file_hash: str = torrent_data["file_hash"]
+        file_hash: str = torrent_data.file_hash
 
-        self.file_manager.start_download(torrent_data)
+        self.file_manager.start_download(torrent_data, self.network_manager)
 
         download: Download = Download(file_hash, torrent_data)
         self.downloads[file_hash] = download
@@ -164,16 +166,15 @@ class TorrentClient:
         torrent_data = self.file_manager.load_torrent_file(torrent_path)
 
         return {
-            "name": torrent_data["file_name"],
-            "total_size": torrent_data["file_size"],
+            "name": torrent_data.file_name,
+            "total_size": torrent_data.file_size,
             "num_files": 1,
-            "files": [
-                {"path": torrent_data["file_name"], "size": torrent_data["file_size"]}
-            ],
+            "files": [{"path": torrent_data.file_name, "size": torrent_data.file_size}],
         }
 
     def get_status(self, download: Download) -> Dict[str, Any]:
         return {
+            "file_hash": download.file_hash,
             "name": download.file_name,
             "progress": download.progress,
             "download_rate": download.download_rate,
@@ -185,26 +186,33 @@ class TorrentClient:
             "total_upload": 0,
         }
 
-    def get_all_torrents(self) -> List[Download]:
-        return list(self.downloads.values())
+    def get_all_torrents(self) -> Dict[str, Download]:
+        return self.downloads
 
-    def pause_torrent(self, download: Download):
-        if isinstance(download, Download):
-            download.paused = True
-            download.state = "paused"
+    def exists_torrent(self, file_hash: str) -> bool:
+        return file_hash in self.downloads
 
-    def resume_torrent(self, download: Download):
-        if isinstance(download, Download):
-            download.paused = False
-            download.state = "downloading"
+    def pause_torrent(self, file_hash: str):
+        if file_hash not in self.downloads:
+            return
+        download = self.downloads[file_hash]
+        download.state = "paused"
+        download.paused = True
 
-    def remove_torrent(self, download: Download):
-        if isinstance(download, Download):
-            file_hash: str = download.file_hash
-            if file_hash in self.downloads:
-                del self.downloads[file_hash]
-            if file_hash in self.file_manager.active_downloads:
-                del self.file_manager.active_downloads[file_hash]
+    def resume_torrent(self, file_hash: str):
+        if file_hash not in self.downloads:
+            return
+        download = self.downloads[file_hash]
+        download.state = "downloading"
+        download.paused = False
+
+    def remove_torrent(self, file_hash: str):
+        if file_hash not in self.downloads:
+            return
+        if file_hash in self.downloads:
+            del self.downloads[file_hash]
+        if file_hash in self.file_manager.active_downloads:
+            del self.file_manager.active_downloads[file_hash]
 
     def connect_to_peer(self, host: str, port: int) -> PeerConnection:
         return self.network_manager.connect_to_peer(host, port)

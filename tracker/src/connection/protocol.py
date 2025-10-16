@@ -24,6 +24,7 @@ class Protocol:
             msg_id = f"msg_{uuid.uuid4().hex[:8]}"
 
         message = {
+            "controller": controller,
             "version": Protocol.VERSION,
             "command": command,
             "func": func or "",
@@ -124,4 +125,5 @@ class Protocol:
     @staticmethod
     def create_keepalive() -> Dict[str, Any]:
         return Protocol.create_message(
-            "TrackerController",Protocol.COMMANDS["UPDATE"], func="keepalive")
+            "TrackerController", Protocol.COMMANDS["UPDATE"], func="keepalive"
+        )
