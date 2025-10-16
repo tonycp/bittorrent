@@ -1,11 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from .config import ConfigManager
-from .torrent import TorrentClient
+from ..config.config_mng import ConfigManager
+from ..core.torrent_client import TorrentClient
 
 
 class BitTorrentClientGUI:
-    def __init__(self, root):
+    def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Cliente BitTorrent")
         self.root.geometry("900x600")
@@ -503,37 +503,3 @@ class BitTorrentClientGUI:
             print(f"Error actualizando torrents: {e}")
 
         self.root.after(1000, self.update_torrents)
-
-
-
-# from widgets import *
-# from styles.container import container_
-
-
-# class BitTorrentClient(tk.Tk):
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self.title("BitTorrent Client")
-#         self.geometry("800x500")
-
-#         # Contenedor principal: apila todos los frames
-#         container = tk.Frame(self)
-#         container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-#         container.configure(container_)
-#         container.grid_columnconfigure(0, weight=1)
-#         container.grid_rowconfigure(0, weight=1)
-
-#         # Inicializa frames (vistas/paneles)
-#         self.frames = {}
-#         self.init_frames(container)
-
-#     def init_frames(self, container):
-#         self.frames = dict([(F, F(container, self)) for F in widgets])
-#         self.frames[NavBar].grid_configure(
-#             column=0,
-#         )
-
-#     def show_frame(self, page_class):
-#         frame = self.frames[page_class]
-#         frame.tkraise()

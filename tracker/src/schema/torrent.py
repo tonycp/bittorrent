@@ -68,6 +68,10 @@ class Peer(Entity):
         nullable=True,
     )  # Para extensibilidad ('leech', 'seed', 'stopped', etc.)
 
+    # Datos del cliente
+    client_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    protocol_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     torrents: Mapped[List["Torrent"]] = relationship(
         "Torrent",
         secondary=torrent_peers,

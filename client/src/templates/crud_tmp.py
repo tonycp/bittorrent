@@ -1,4 +1,4 @@
-from keys import *
+from ..const.keys import *
 from .bsc_tmp import get_grud_template
 
 

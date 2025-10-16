@@ -1,3 +1,0 @@
-DEFAULT_DB = "sqlite:///tracker.db"
-DEFAULT_TRK_HOST = "172.20.0.2"
-DEFAULT_TRK_PORT = "5555"

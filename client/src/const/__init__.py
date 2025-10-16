@@ -1,4 +1,4 @@
 from .env import *
 from .keys import *
-from .settings import *
-from .env_def import *
+from .default import *
+from .config import *

@@ -75,6 +75,86 @@ class TrackerController:
             "peers": active_peers,
         }
 
+    @create(HANDSHAKE_DATASET)
+    def handshake(self, peer_id: str, client_name: str, protocol_version: str):
+        # Opcional: validar versión de protocolo
+        if protocol_version != "1.0":
+            raise ValueError("Versión de protocolo no soportada")
+
+        now = datetime.now(timezone.utc)
+        # Buscar o crear el peer
+        peer = self.peer_repo.get_by_field(peer_id=peer_id)
+        if not peer:
+            peer = Peer(
+                peer_id=peer_id,
+                ip="0.0.0.0",  # Puedes actualizar luego si lo tienes
+                port=0,
+                uploaded=0,
+                downloaded=0,
+                left=0,
+                last_announce=now,
+                is_seed=False,
+                client_name=client_name,
+                protocol_version=protocol_version,
+            )
+            self.peer_repo.add(peer)
+        else:
+            peer.client_name = client_name
+            peer.protocol_version = protocol_version
+            peer.last_announce = now
+
+        return {
+            "status": "ok",
+            "message": "Handshake exitoso",
+            "protocol_version": protocol_version,
+        }
+
+    @create(DISCONNECT_DATASET)  # Debes definir este decorator/dataset para DISCONNECT
+    def disconnect(self, peer_id: str, info_hash: str):
+        torrent = self.torrent_repo.get_by_field(info_hash=info_hash)
+        if not torrent:
+            raise ValueError("Torrent no encontrado")
+
+        peer = self.peer_repo.get_by_field(peer_id=peer_id)
+        if not peer:
+            raise ValueError("Peer no encontrado")
+
+        # Elimina el peer de la lista del torrent
+        if peer in torrent.peers:
+            torrent.peers.remove(peer)
+            self.peer_repo.delete(peer)  # Si deseas borrarlo completamente
+            return {"status": "ok", "message": "Peer desconectado"}
+        else:
+            return {"status": "not_found", "message": "Peer no asociado al torrent"}
+
+    @create(KEEPALIVE_DATASET)
+    def keepalive(self, peer_id: str):
+        peer = self.peer_repo.get_by_field(peer_id=peer_id)
+        if not peer:
+            raise ValueError("Peer no encontrado")
+
+        now = datetime.now(timezone.utc)
+        peer.last_announce = now  # Solo actualiza el timestamp de actividad
+
+        return {"status": "ok", "message": "Seguimiento de actividad actualizado"}
+
+    @get(PEER_LIST_DATASET)
+    def peer_list(self, info_hash: str):
+        torrent = self.torrent_repo.get_by_field(info_hash=info_hash)
+        if not torrent:
+            raise ValueError("Torrent no encontrado")
+
+        now = datetime.now(timezone.utc)
+        interval = 1800
+        active_peers = [
+            {"peer_id": p.peer_id, "ip": p.ip, "port": p.port}
+            for p in torrent.peers
+            if p.last_announce
+            and (now - p.last_announce).total_seconds() < 2 * interval
+        ]
+
+        return {"info_hash": info_hash, "peers": active_peers}
+
     @get(GET_PEERS_DATASET)
     def scrape(self, info_hash: str):
         torrent = self.torrent_repo.get_by_field(info_hash=info_hash)
@@ -93,3 +173,16 @@ class TrackerController:
         leechers = len(active_peers) - seeders
 
         return {"info_hash": info_hash, "seeders": seeders, "leechers": leechers}
+
+    @get(FILE_INFO_DATASET)
+    def file_info(self, info_hash: str):
+        torrent = self.torrent_repo.get_by_field(info_hash=info_hash)
+        if not torrent:
+            raise ValueError("Torrent no encontrado")
+
+        return {
+            "info_hash": info_hash,
+            "file_name": torrent.file_name,
+            "file_size": torrent.file_size,
+            "total_chunks": torrent.total_chunks,
+        }

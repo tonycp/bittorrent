@@ -11,7 +11,89 @@
             ],
             "default": "tracker"
         },
+        {
+            "id": "display-ip",
+            "type": "pickString",
+            "description": "selecciona el ip",
+            "options": [
+                "host.docker.internal",
+                "192.168.1.102",
+            ],
+            "default": "host.docker.internal"
+        },
+        {
+            "id": "tag",
+            "type": "promptString",
+            "description": "introduce el tag",
+        },
     ],
     "tasks": [
+        {
+            "label": "UV Run",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "--directory",
+                "${input:dir}",
+                "run",
+                "--active",
+                "main.py",
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker UV Debug",
+            "type": "shell",
+            "command": "docker",
+            "args": [
+                "run",
+                "--rm",
+                "-it",
+                "-p",
+                "5678:5678",
+                "-v",
+                "\"${workspaceFolder}\\${input:dir}\\src:/app/src\"",
+                "--network",
+                "torrent_net",
+                "-e",
+                "DISPLAY=${input:display-ip}:0.0",
+                "--entrypoint",
+                "python",
+                "bt_${input:dir}:${input:tag}",
+                "-m",
+                "debugpy",
+                "--listen",
+                "0.0.0.0:5678",
+                "-m",
+                "uv",
+                "--directory",
+                "app",
+                "run",
+                "main.py",
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+            }
+        }
     ]
 }

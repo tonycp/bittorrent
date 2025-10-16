@@ -25,7 +25,6 @@ class Protocol:
 
         message = {
             "version": Protocol.VERSION,
-            "controller": controller,
             "command": command,
             "func": func or "",
             "args": args or {},
@@ -125,5 +124,4 @@ class Protocol:
     @staticmethod
     def create_keepalive() -> Dict[str, Any]:
         return Protocol.create_message(
-            "TrackerController", Protocol.COMMANDS["UPDATE"], func="keepalive"
-        )
+            "TrackerController",Protocol.COMMANDS["UPDATE"], func="keepalive")

@@ -1,93 +1,74 @@
-import os
-import time
-import uuid
-import threading
+import os, time, uuid, threading
+from typing import Any, Dict, List, Set
+
+from ..connection.peer_conn import PeerConnection
+
+from ..config.config_mng import ConfigManager
 from ..connection.network import NetworkManager
 from ..connection.protocol import Protocol
-from .file import FileManager
-
-
-class Download:
-    def __init__(self, file_hash, torrent_data):
-        self.file_hash = file_hash
-        self.torrent_data = torrent_data
-        self.file_name = torrent_data["file_name"]
-        self.file_size = torrent_data["file_size"]
-        self.total_chunks = torrent_data["total_chunks"]
-        self.downloaded_chunks = set()
-        self.progress = 0.0
-        self.download_rate = 0.0
-        self.upload_rate = 0.0
-        self.num_peers = 0
-        self.state = "downloading"
-        self.paused = False
-        self.last_update = time.time()
-        self.bytes_downloaded_last = 0
+from .file_mng import FileManager
+from ..interface.download import Download
 
 
 class TorrentClient:
-    def __init__(self, config_manager):
+    def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.peer_id = f"P2P-{uuid.uuid4().hex[:12]}"
+        self.peer_id: str = f"P2P-{uuid.uuid4().hex[:12]}"
 
-        self.network_manager = NetworkManager(
+        self.network_manager: NetworkManager = NetworkManager(
             self.config_manager.get_listen_port(), self.peer_id
         )
 
-        self.file_manager = FileManager(self.config_manager.get_download_path())
+        self.file_manager: FileManager = FileManager(
+            self.config_manager.get_download_path()
+        )
 
-        self.downloads = {}
-        self.running = False
+        self.downloads: Dict[str, Download] = {}
+        self.running: bool = False
 
         self._register_handlers()
         self.setup_session()
 
     def _register_handlers(self):
+        self.network_manager.register_handler("handshake", self._handle_handshake)
         self.network_manager.register_handler(
-            Protocol.COMMANDS["HANDSHAKE"], self._handle_handshake
+            "request_chunk", self._handle_chunk_request
         )
-        self.network_manager.register_handler(
-            Protocol.COMMANDS["REQUEST_CHUNK"], self._handle_chunk_request
-        )
-        self.network_manager.register_handler(
-            Protocol.COMMANDS["SEND_CHUNK"], self._handle_chunk_response
-        )
-        self.network_manager.register_handler(
-            Protocol.COMMANDS["FILE_INFO"], self._handle_file_info
-        )
+        self.network_manager.register_handler("send_chunk", self._handle_chunk_response)
+        self.network_manager.register_handler("file_info", self._handle_file_info)
 
-    def _handle_handshake(self, peer_conn, message):
-        args = message.get("args", {})
+    def _handle_handshake(self, peer_conn: PeerConnection, message: Dict):
+        args: Dict[str, Any] = message.get("args", {})
         peer_conn.peer_id = args.get("peer_id")
-        print(f"Handshake recibido de peer: {peer_conn.peer_id}")
+        print(f"Handshake received from peer: {peer_conn.peer_id}")
 
         response = Protocol.create_handshake(self.peer_id)
         peer_conn.send_message(response)
 
-    def _handle_chunk_request(self, peer_conn, message):
-        args = message.get("args", {})
-        file_hash = args.get("file_hash")
-        chunk_id = args.get("chunk_id")
+    def _handle_chunk_request(self, peer_conn: PeerConnection, message: Dict):
+        args: Dict[str, Any] = message.get("args", {})
+        file_hash: str = args.get("file_hash")
+        chunk_id: int = args.get("chunk_id")
 
         if file_hash in self.file_manager.files:
-            file_path = os.path.join(
+            file_path: str = os.path.join(
                 self.config_manager.get_download_path(),
                 self.file_manager.files[file_hash]["file_name"],
             )
 
             if os.path.exists(file_path):
-                chunk_data = self.file_manager.get_chunk(file_path, chunk_id)
+                chunk_data: bytes = self.file_manager.get_chunk(file_path, chunk_id)
                 if chunk_data:
                     import base64
 
-                    chunk_b64 = base64.b64encode(chunk_data).decode("utf-8")
+                    chunk_data_b64: str = base64.b64encode(chunk_data).decode("utf-8")
                     response = Protocol.create_chunk_response(
-                        file_hash, chunk_id, chunk_b64
+                        file_hash, chunk_id, chunk_data_b64
                     )
                     peer_conn.send_message(response)
 
-    def _handle_chunk_response(self, peer_conn, message):
-        args = message.get("args", {})
+    def _handle_chunk_response(self, peer_conn: PeerConnection, message: Dict):
+        args: Dict[str, Any] = message.get("args", {})
         file_hash = args.get("file_hash")
         chunk_id = args.get("chunk_id")
         chunk_data_b64 = args.get("chunk_data")
@@ -95,10 +76,10 @@ class TorrentClient:
         if file_hash in self.downloads:
             import base64
 
-            chunk_data = base64.b64decode(chunk_data_b64)
+            chunk_data: bytes = base64.b64decode(chunk_data_b64)
 
             if self.file_manager.write_chunk(file_hash, chunk_id, chunk_data):
-                download = self.downloads[file_hash]
+                download: Download = self.downloads[file_hash]
                 download.downloaded_chunks.add(chunk_id)
 
                 progress_info = self.file_manager.get_download_progress(file_hash)
@@ -107,7 +88,7 @@ class TorrentClient:
 
                 if self.file_manager.is_download_complete(file_hash):
                     download.state = "seeding"
-                    print(f"Descarga completada: {download.file_name}")
+                    print(f"Descarga completed: {download.file_name}")
 
     def _handle_file_info(self, peer_conn, message):
         pass
@@ -130,16 +111,16 @@ class TorrentClient:
                 print(f"Error en update loop: {e}")
 
     def _update_download_stats(self):
-        current_time = time.time()
+        current_time: float = time.time()
 
         for file_hash, download in self.downloads.items():
             progress_info = self.file_manager.get_download_progress(file_hash)
             if progress_info:
                 download.progress = progress_info["progress"]
 
-                time_diff = current_time - download.last_update
+                time_diff: float = current_time - download.last_update
                 if time_diff > 0:
-                    bytes_diff = (
+                    bytes_diff: int = (
                         progress_info["downloaded_size"]
                         - download.bytes_downloaded_last
                     )
@@ -168,18 +149,18 @@ class TorrentClient:
                     peer.send_message(request)
                     break
 
-    def add_torrent(self, torrent_path):
+    def add_torrent(self, torrent_path: str) -> Download:
         torrent_data = self.file_manager.load_torrent_file(torrent_path)
-        file_hash = torrent_data["file_hash"]
+        file_hash: str = torrent_data["file_hash"]
 
         self.file_manager.start_download(torrent_data)
 
-        download = Download(file_hash, torrent_data)
+        download: Download = Download(file_hash, torrent_data)
         self.downloads[file_hash] = download
 
         return download
 
-    def get_torrent_info(self, torrent_path):
+    def get_torrent_info(self, torrent_path: str) -> Dict[str, Any]:
         torrent_data = self.file_manager.load_torrent_file(torrent_path)
 
         return {
@@ -191,7 +172,7 @@ class TorrentClient:
             ],
         }
 
-    def get_status(self, download):
+    def get_status(self, download: Download) -> Dict[str, Any]:
         return {
             "name": download.file_name,
             "progress": download.progress,
@@ -204,28 +185,28 @@ class TorrentClient:
             "total_upload": 0,
         }
 
-    def get_all_torrents(self):
+    def get_all_torrents(self) -> List[Download]:
         return list(self.downloads.values())
 
-    def pause_torrent(self, download):
+    def pause_torrent(self, download: Download):
         if isinstance(download, Download):
             download.paused = True
             download.state = "paused"
 
-    def resume_torrent(self, download):
+    def resume_torrent(self, download: Download):
         if isinstance(download, Download):
             download.paused = False
             download.state = "downloading"
 
-    def remove_torrent(self, download):
+    def remove_torrent(self, download: Download):
         if isinstance(download, Download):
-            file_hash = download.file_hash
+            file_hash: str = download.file_hash
             if file_hash in self.downloads:
                 del self.downloads[file_hash]
             if file_hash in self.file_manager.active_downloads:
                 del self.file_manager.active_downloads[file_hash]
 
-    def connect_to_peer(self, host, port):
+    def connect_to_peer(self, host: str, port: int) -> PeerConnection:
         return self.network_manager.connect_to_peer(host, port)
 
     def stop(self):
