@@ -57,8 +57,8 @@ class Peer(Entity):
     port: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Estado de avance
-    uploaded: Mapped[int] = mapped_column(BigInteger, default=0)
-    downloaded: Mapped[int] = mapped_column(BigInteger, default=0)
+    # uploaded: Mapped[int] = mapped_column(BigInteger, default=0)
+    # downloaded: Mapped[int] = mapped_column(BigInteger, default=0)
     left: Mapped[int] = mapped_column(BigInteger, default=0)
 
     # Estado y auditoría

@@ -83,8 +83,6 @@ class Protocol:
                 "peer_id": peer_id,
                 "ip": ip,
                 "port": port,
-                "uploaded": uploaded,
-                "downloaded": downloaded,
                 "left": left,
                 "event": event,
             },
@@ -136,4 +134,28 @@ class Protocol:
             Protocol.COMMANDS["READ"],
             func="scrape",
             args={"info_hash": info_hash},
+        )
+
+    @staticmethod
+    def create_chunk_response(chunk_id: int, chunk_data: bytes) -> Dict[str, Any]:
+        return Protocol.create_message(
+            "ClientController",
+            Protocol.COMMANDS["READ"],
+            func="response_chunk",
+            args={
+                "chunk_id": chunk_id,
+                "chunk_data": chunk_data,
+            },
+        )
+
+    @staticmethod
+    def create_chunk_request(info_hash: str, chunk_id: int) -> Dict[str, Any]:
+        return Protocol.create_message(
+            "ClientController",
+            Protocol.COMMANDS["READ"],
+            func="request_chunk",
+            args={
+                "file_hash": info_hash,
+                "chunk_id": chunk_id,
+            },
         )

@@ -2,9 +2,11 @@ import os, json, socket, threading, time
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import asdict
 
+
 from ..connection.peer_conn import PeerConnection
 from ..config.utils import get_env_settings
 from ..const.env import CLT_HOST, CLT_PORT
+from ..interface.chunk_info import ChunkInfo
 from ..interface.torrent_data import TorrentData
 from ..connection.network import NetworkManager
 from ..connection.protocol import Protocol
@@ -110,9 +112,11 @@ class FileDownloader(threading.Thread):
             if not peer:
                 time.sleep(0.5)
                 continue
-
+            
             peer_key = f"{peer['ip']}:{peer['port']}"
+            self.network_manager.connect_to_peer(peer['ip'], peer['port'])
             message = Protocol.create_chunk_request(self.torrent_data.file_hash, i)
+            print(peer_key, message)
             self.network_manager.send_to_peer(peer_key, message)
 
             start = time.time()
@@ -132,6 +136,7 @@ class FileDownloader(threading.Thread):
             return
 
         try:
+            print(message)
             with open(self.file_path, "r+b") as f:
                 offset = chunk_id * self.torrent_data.chunk_size
                 f.seek(offset)
@@ -154,6 +159,7 @@ class FileDownloader(threading.Thread):
 
     def mark_as_complete(self):
         self.downloaded_chunks = set(range(self.total_chunks))
+        self.downloaded_size = sum(map(_get_size, self.torrent_data.chunks_info))
         self.update_progress()
         self.save_state()
 
@@ -231,3 +237,7 @@ class FileDownloader(threading.Thread):
         temp_file = f"{self.file_path}.part"
         if os.path.exists(temp_file):
             os.remove(temp_file)
+
+
+def _get_size(x: ChunkInfo):
+    return x.chunk_size

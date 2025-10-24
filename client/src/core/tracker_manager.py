@@ -1,9 +1,15 @@
+from ..connection.network import NetworkManager
+from ..const.env import CLT_HOST
+from ..config.utils import get_env_settings
+from ..config.config_mng import ConfigManager
 from ..connection.peer_conn import PeerConnection
 
 
 class TrackerManager:
-    def __init__(self, config_manager):
+    def __init__(self, config_manager: ConfigManager, network: NetworkManager):
+        self.network = network
         self.config_manager = config_manager
+        self.env_settings = get_env_settings()
 
     def register_torrent(self, torrent_data, tracker_address):
         create_msg = {
@@ -30,8 +36,8 @@ class TrackerManager:
     def get_peers(self, info_hash, tracker_address):
         get_msg = {
             "controller": "TrackerController",
-            "command": "GetPeers",
-            "func": "get_peers",
+            "command": "Get",
+            "func": "peer_list",
             "args": {"info_hash": info_hash},
             "version": "1.0",
         }
@@ -50,9 +56,16 @@ class TrackerManager:
     def announce(self, info_hash, peer_id, tracker_address):
         announce_msg = {
             "controller": "TrackerController",
-            "command": "Announce",
+            "command": "Create",
             "func": "announce",
-            "args": {"info_hash": info_hash, "peer_id": peer_id},
+            "args": {
+                "info_hash": info_hash,
+                "peer_id": peer_id,
+                "ip": self.network.client_ip,
+                "port": self.config_manager.get_listen_port(),
+                "left": 0,
+                "event": "started",
+            },
             "version": "1.0",
         }
         tracker_host, tracker_port = tracker_address

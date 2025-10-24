@@ -21,8 +21,6 @@ class TrackerController:
         peer_id: str,
         ip: str,
         port: int,
-        uploaded: int,
-        downloaded: int,
         left: int,
         event: str = None,  # Agregado para manejar eventos BT
     ):
@@ -40,8 +38,6 @@ class TrackerController:
                 peer_id=peer_id,
                 ip=ip,
                 port=port,
-                uploaded=uploaded,
-                downloaded=downloaded,
                 left=left,
                 last_announce=now,
                 is_seed=(event == "completed"),
@@ -51,8 +47,6 @@ class TrackerController:
         else:
             peer.ip = ip
             peer.port = port
-            peer.uploaded = uploaded
-            peer.downloaded = downloaded
             peer.left = left
             peer.last_announce = now
             if event == "completed":
@@ -66,8 +60,6 @@ class TrackerController:
         active_peers = [
             {"ip": p.ip, "port": p.port}
             for p in torrent.peers
-            if p.last_announce
-            and (now - p.last_announce).total_seconds() < 2 * interval
         ]
 
         return {
@@ -89,8 +81,6 @@ class TrackerController:
                 peer_id=peer_id,
                 ip="0.0.0.0",  # Puedes actualizar luego si lo tienes
                 port=0,
-                uploaded=0,
-                downloaded=0,
                 left=0,
                 last_announce=now,
                 is_seed=False,
@@ -149,8 +139,6 @@ class TrackerController:
         active_peers = [
             {"peer_id": p.peer_id, "ip": p.ip, "port": p.port}
             for p in torrent.peers
-            if p.last_announce
-            and (now - p.last_announce).total_seconds() < 2 * interval
         ]
 
         return {"info_hash": info_hash, "peers": active_peers}

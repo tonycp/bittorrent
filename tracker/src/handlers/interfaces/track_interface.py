@@ -3,8 +3,6 @@ ANNOUNCE_DATASET = {
     "peer_id": str,
     "ip": str,
     "port": int,
-    "uploaded": int,
-    "downloaded": int,
     "left": int,
     "event": str,  # opcional, puede ser 'started', 'stopped', 'completed'
 }

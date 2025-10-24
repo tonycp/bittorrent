@@ -141,15 +141,16 @@ class BitTorrentClientGUI:
         if filename:
             try:
                 info = self.torrent_client.get_torrent_info(filename)
+                name = info.file_name
 
-                msg = f"Nombre: {info['name']}\n"
-                msg += f"Tamaño: {info['display_size']}\n"
-                msg += f"Archivos: {info['num_files']}\n\n"
+                msg = f"Nombre: {name}\n"
+                msg += f"Tamaño: {info.display_size}\n"
+                msg += f"Archivos: {info.chunk_size}\n\n"
                 msg += "¿Desea agregar este torrent?"
 
                 if messagebox.askyesno("Información del Torrent", msg):
-                    self.torrent_client.add_torrent(filename)
-                    self.status_message.config(text=f"Torrent agregado: {info['name']}")
+                    self.torrent_client.add_torrent(info)
+                    self.status_message.config(text=f"Torrent agregado: {name}")
             except Exception as e:
                 messagebox.showerror("Error", f"Error al cargar torrent: {str(e)}")
 

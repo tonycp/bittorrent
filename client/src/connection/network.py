@@ -7,6 +7,8 @@ from .protocol import Protocol
 
 class NetworkManager:
     def __init__(self, listen_port: int, peer_id: str):
+        hostname = socket.gethostname()
+        self.client_ip = socket.gethostbyname(hostname)
         self.listen_port = listen_port
         self.peer_id = peer_id
         self.peers: Dict[str, PeerConnection] = {}
@@ -27,7 +29,7 @@ class NetworkManager:
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind(("0.0.0.0", self.listen_port))
+            self.server_socket.bind((self.client_ip, self.listen_port))
             self.server_socket.listen(5)
             self.running = True
 
@@ -35,6 +37,7 @@ class NetworkManager:
                 target=self._accept_connections, daemon=True
             )
             accept_thread.start()
+            print(self.server_socket)
 
             return True
         except Exception as e:
@@ -48,6 +51,7 @@ class NetworkManager:
                 peer_conn = PeerConnection(address[0], address[1])
                 peer_conn.socket = client_socket
                 peer_conn.connected = True
+                print(peer_conn)
 
                 thread = threading.Thread(
                     target=self._handle_peer, args=(peer_conn,), daemon=True
@@ -61,6 +65,7 @@ class NetworkManager:
         try:
             while peer_conn.connected and self.running:
                 message = peer_conn.receive_message()
+                print(message)
                 if message is None:
                     break
                 command = message.get("command")
