@@ -22,7 +22,6 @@ class Protocol:
     ) -> Dict[str, Any]:
         if msg_id is None:
             msg_id = f"msg_{uuid.uuid4().hex[:8]}"
-
         message = {
             "version": Protocol.VERSION,
             "controller": controller,
@@ -65,78 +64,76 @@ class Protocol:
         )
 
     @staticmethod
-    def create_file_info_request(file_hash: str) -> Dict[str, Any]:
-        return Protocol.create_message(
-            "TrackerController",
-            Protocol.COMMANDS["GET"],
-            func="file_info",
-            args={"file_hash": file_hash},
-        )
-
-    @staticmethod
-    def create_file_info_response(
-        file_hash: str, file_name: str, file_size: int, total_chunks: int
+    def create_announce(
+        info_hash: str,
+        peer_id: str,
+        ip: str,
+        port: int,
+        uploaded: int,
+        downloaded: int,
+        left: int,
+        event: Optional[str] = None,
     ) -> Dict[str, Any]:
-        return Protocol.create_message(
-            "TrackerController",
-            Protocol.COMMANDS["GET"],
-            func="file_info",
-            args={
-                "file_hash": file_hash,
-                "file_name": file_name,
-                "file_size": file_size,
-                "total_chunks": total_chunks,
-            },
-        )
-
-    @staticmethod
-    def create_chunk_request(file_hash: str, chunk_id: int) -> Dict[str, Any]:
-        return Protocol.create_message(
-            "TrackerController",
-            Protocol.COMMANDS["GET"],
-            func="request_chunk",
-            args={"file_hash": file_hash, "chunk_id": chunk_id},
-        )
-
-    @staticmethod
-    def create_chunk_response(
-        file_hash: str, chunk_id: int, chunk_data: bytes
-    ) -> Dict[str, Any]:
-        return Protocol.create_message(
-            "TrackerController",
-            Protocol.COMMANDS["GET"],
-            func="send_chunk",
-            args={
-                "file_hash": file_hash,
-                "chunk_id": chunk_id,
-                "chunk_data": chunk_data,
-            },
-        )
-
-    @staticmethod
-    def create_announce(peer_id: str, files_available: List[str]) -> Dict[str, Any]:
         return Protocol.create_message(
             "TrackerController",
             Protocol.COMMANDS["CREATE"],
             func="announce",
-            args={"peer_id": peer_id, "files": files_available},
+            args={
+                "info_hash": info_hash,
+                "peer_id": peer_id,
+                "ip": ip,
+                "port": port,
+                "uploaded": uploaded,
+                "downloaded": downloaded,
+                "left": left,
+                "event": event,
+            },
         )
 
     @staticmethod
-    def create_keepalive() -> Dict[str, Any]:
+    def create_disconnect(peer_id: str, info_hash: str) -> Dict[str, Any]:
+        return Protocol.create_message(
+            "TrackerController",
+            Protocol.COMMANDS["CREATE"],
+            func="disconnect",
+            args={
+                "peer_id": peer_id,
+                "info_hash": info_hash,
+            },
+        )
+
+    @staticmethod
+    def create_keepalive(peer_id: str) -> Dict[str, Any]:
         return Protocol.create_message(
             "TrackerController",
             Protocol.COMMANDS["UPDATE"],
             func="keepalive",
+            args={"peer_id": peer_id},
+        )
+
+    @staticmethod
+    def create_file_info_request(info_hash: str) -> Dict[str, Any]:
+        return Protocol.create_message(
+            "TrackerController",
+            Protocol.COMMANDS["READ"],
+            func="file_info",
+            args={"info_hash": info_hash},
         )
 
     @staticmethod
     def create_peer_list(info_hash: str) -> Dict[str, Any]:
         return Protocol.create_message(
             "TrackerController",
-            Protocol.COMMANDS["GET"],
+            Protocol.COMMANDS["READ"],
             func="peer_list",
-            args={
-                "info_hash": info_hash,
-            },
+            args={"info_hash": info_hash},
+        )
+
+    @staticmethod
+    def create_scrape(info_hash: str) -> Dict[str, Any]:
+        return Protocol.create_message(
+            "TrackerController",
+            Protocol.COMMANDS["READ"],
+            func="scrape",
+            args={"info_hash": info_hash},
         )

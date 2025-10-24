@@ -31,6 +31,11 @@ class Torrent(Entity):
     info_hash: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    # Añadir estos campos sugeridos:
+    size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    chunks: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Puedes agregar más como chunk_size, fecha de creación, comentario...
+
     peers: Mapped[List["Peer"]] = relationship(
         "Peer",
         secondary=torrent_peers,

@@ -16,6 +16,7 @@ class NetworkManager:
             str, Callable[[PeerConnection, Dict[str, Any]], None]
         ] = {}
         self.lock = threading.Lock()
+        self.tracker_conn: Optional[PeerConnection] = None
 
     def register_handler(
         self, func: str, handler: Callable[[PeerConnection, Dict[str, Any]], None]
@@ -60,14 +61,11 @@ class NetworkManager:
         try:
             while peer_conn.connected and self.running:
                 message = peer_conn.receive_message()
-
                 if message is None:
                     break
-
                 command = message.get("command")
                 if command in self.message_handlers:
                     self.message_handlers[command](peer_conn, message)
-
         except Exception as e:
             print(f"Error manejando peer: {e}")
         finally:
@@ -106,6 +104,24 @@ class NetworkManager:
         with self.lock:
             return [p for p in self.peers.values() if p.connected]
 
+    # --- Métodos para comunicación con el tracker ---
+
+    def connect_to_tracker(self, tracker_host: str, tracker_port: int) -> bool:
+        self.tracker_conn = PeerConnection(tracker_host, tracker_port)
+        return self.tracker_conn.connect()
+
+    def send_to_tracker(self, message: Dict[str, Any]) -> bool:
+        if self.tracker_conn and self.tracker_conn.connected:
+            return self.tracker_conn.send_message(message)
+        return False
+
+    def receive_from_tracker(self) -> Optional[Dict[str, Any]]:
+        print(self.tracker_conn)
+        print(self.tracker_conn.connected)
+        if self.tracker_conn and self.tracker_conn.connected:
+            return self.tracker_conn.receive_message()
+        return None
+
     def stop(self) -> None:
         self.running = False
 
@@ -113,6 +129,10 @@ class NetworkManager:
             for peer in self.peers.values():
                 peer.close()
             self.peers.clear()
+
+        if self.tracker_conn:
+            self.tracker_conn.close()
+            self.tracker_conn = None
 
         if self.server_socket:
             try:

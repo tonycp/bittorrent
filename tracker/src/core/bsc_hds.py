@@ -52,7 +52,7 @@ def create_handler(
         def wrapper(data: Dict[str, Any], instance: Any = None) -> str:
             contains_self = is_class and not is_static
             result = func(instance, **data) if (contains_self) else func(**data)
-            return json.dumps(result)
+            return result
 
         # Register the handler at decoration time
         _handlers[index] = (wrapper, dataset, is_class)

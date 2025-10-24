@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import time
-from typing import Set
+from typing import Set, Dict, Any
 
 from .torrent_data import TorrentData
 
@@ -30,3 +30,17 @@ class Download:
     @property
     def total_chunks(self) -> int:
         return self.torrent_data.total_chunks
+
+    @classmethod
+    def from_torrent_data(cls, torrent_data: TorrentData, file_status: Dict[str, Any]):
+        return cls(
+            file_hash=torrent_data.file_hash,
+            torrent_data=torrent_data,
+            downloaded_chunks=file_status.get("downloaded_chunks", set()),
+            progress=file_status.get("progress", 0.0),
+            state=file_status.get("state", "downloading"),
+        )
+
+    def set_state(self, new_state: str):
+        self.state = new_state
+        self.paused = new_state == "paused"

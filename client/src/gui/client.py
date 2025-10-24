@@ -68,22 +68,20 @@ class BitTorrentClientGUI:
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
 
-        columns = ("Nombre", "Progreso", "Descarga", "Subida", "Peers", "Estado")
+        columns = ("Nombre", "Tamaño", "Descargado", "Progreso", "Chunks")
         self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
 
-        self.tree.heading("Nombre", text="Nombre")
-        self.tree.heading("Progreso", text="Progreso")
-        self.tree.heading("Descarga", text="Descarga (KB/s)")
-        self.tree.heading("Subida", text="Subida (KB/s)")
-        self.tree.heading("Peers", text="Peers")
-        self.tree.heading("Estado", text="Estado")
+        self.tree.heading("Nombre", text="Archivo")
+        self.tree.heading("Tamaño", text="Tamaño (bytes)")
+        self.tree.heading("Descargado", text="Descargado")
+        self.tree.heading("Progreso", text="Progreso (%)")
+        self.tree.heading("Chunks", text="Chunks")
 
         self.tree.column("Nombre", width=300)
-        self.tree.column("Progreso", width=100)
-        self.tree.column("Descarga", width=120)
-        self.tree.column("Subida", width=120)
-        self.tree.column("Peers", width=80)
-        self.tree.column("Estado", width=100)
+        self.tree.column("Tamaño", width=100, anchor=tk.E)
+        self.tree.column("Descargado", width=100, anchor=tk.E)
+        self.tree.column("Progreso", width=100, anchor=tk.E)
+        self.tree.column("Chunks", width=100, anchor=tk.E)
 
         scrollbar = ttk.Scrollbar(
             tree_frame, orient=tk.VERTICAL, command=self.tree.yview
@@ -145,12 +143,12 @@ class BitTorrentClientGUI:
                 info = self.torrent_client.get_torrent_info(filename)
 
                 msg = f"Nombre: {info['name']}\n"
-                msg += f"Tamaño: {info['total_size'] / (1024*1024):.2f} MB\n"
+                msg += f"Tamaño: {info['display_size']}\n"
                 msg += f"Archivos: {info['num_files']}\n\n"
                 msg += "¿Desea agregar este torrent?"
 
                 if messagebox.askyesno("Información del Torrent", msg):
-                    handle = self.torrent_client.add_torrent(filename)
+                    self.torrent_client.add_torrent(filename)
                     self.status_message.config(text=f"Torrent agregado: {info['name']}")
             except Exception as e:
                 messagebox.showerror("Error", f"Error al cargar torrent: {str(e)}")
@@ -416,15 +414,12 @@ class BitTorrentClientGUI:
         if filename:
             try:
                 address = self.config_manager.get_tracker_address()
-                torrent_file, torrent_data = (
-                    self.torrent_client.file_manager.create_torrent_file(
-                        filename, address
-                    )
+                torrent_file, torrent_data = self.torrent_client.create_torrent_file(
+                    filename, address
                 )
-
                 msg = f"Torrent creado exitosamente:\n\n"
                 msg += f"Archivo: {torrent_data.file_name}\n"
-                msg += f"Tamaño: {torrent_data.file_size / (1024*1024):.2f} MB\n"
+                msg += f"Tamaño: {torrent_data.display_size}\n"
                 msg += f"Chunks: {torrent_data.total_chunks}\n"
                 msg += f"Hash: {torrent_data.file_hash[:16]}...\n\n"
                 msg += f"Archivo torrent guardado en:\n{torrent_file}"
@@ -541,29 +536,21 @@ class BitTorrentClientGUI:
             total_peers = 0
             active_torrents = 0
 
-            for iid, handle in handles.items():
-                status = self.torrent_client.get_status(handle)
+            for iid in handles:
+                status = self.torrent_client.get_status(iid)
                 values = (
-                    status["name"],
-                    f"{status['progress']:.1f}%",
-                    f"{status['download_rate']:.1f}",
-                    f"{status['upload_rate']:.1f}",
-                    f"{status['num_peers']}/{status['num_seeds']}",
-                    status["state"],
+                    status.file_name,
+                    f"{status.file_size:.1f}",
+                    f"{status.downloaded_size:.1f}",
+                    f"{status.progress:.1f}",
+                    f"{status.total_chunks:.1f}",
                 )
 
+                wargs = {"values": values}
                 if self.tree.exists(iid):
-                    self.tree.item(
-                        iid,
-                        values=values,
-                    )
+                    self.tree.item(iid, **wargs)
                 else:
-                    self.tree.insert(
-                        "",
-                        tk.END,
-                        iid=iid,
-                        values=values,
-                    )
+                    self.tree.insert("", tk.END, iid=iid, **wargs)
 
             num_torrents = len(handles)
             self.torrents_label.config(

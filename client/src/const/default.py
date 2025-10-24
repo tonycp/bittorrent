@@ -1,7 +1,7 @@
 # Default values
 DEFAULT_DB_URL = "sqlite:///tracker.db"
-DEFAULT_TRK_HOST = "172.20.0.2"
-DEFAULT_TRK_PORT = "5555"
+DEFAULT_CLT_HOST = "172.20.0.2"
+DEFAULT_CLT_PORT = "5555"
 DEFAULT_DEBUG = False
 
 DEFAULT_DL_PATH = "./downloads"

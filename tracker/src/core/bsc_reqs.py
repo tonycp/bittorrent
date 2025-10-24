@@ -83,4 +83,4 @@ def handle_request(
         return handler_func(load_data(data, dataset), instance)
     except Exception as e:
         logging.error(f"Error handling request: {e}")
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}

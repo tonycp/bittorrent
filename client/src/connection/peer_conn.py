@@ -3,7 +3,6 @@ from typing import Any, Dict, Optional
 
 from .protocol import Protocol
 
-
 class PeerConnection:
     def __init__(self, host: str, port: int, peer_id: Optional[str] = None):
         self.host = host
@@ -67,3 +66,30 @@ class PeerConnection:
             except:
                 pass
         self.connected = False
+
+    @staticmethod
+    def send_request_and_receive_response(host: str, port: int, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """ Abre conexión, envía msg, recibe respuesta y cierra """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(10)
+                s.connect((host, port))
+                encoded = Protocol.encode_message(message)
+                s.sendall(encoded)
+
+                length_bytes = s.recv(4)
+                if not length_bytes or len(length_bytes) < 4:
+                    return None
+                length = int.from_bytes(length_bytes, byteorder="big")
+
+                data = b""
+                while len(data) < length:
+                    chunk = s.recv(min(length - len(data), 4096))
+                    if not chunk:
+                        return None
+                    data += chunk
+
+                return Protocol.decode_message(data)
+        except Exception as e:
+            print(f"Error en comunicación tracker {host}:{port} - {e}")
+            return None

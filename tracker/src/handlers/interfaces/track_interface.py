@@ -35,3 +35,10 @@ GET_PEERS_DATASET = {
 FILE_INFO_DATASET = {
     "info_hash": str,
 }
+
+CREATE_TORRENT_DATASET = {
+    "info_hash": str,
+    "file_name": str,
+    "file_size": int,
+    "total_chunks": int,
+}

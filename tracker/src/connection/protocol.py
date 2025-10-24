@@ -114,16 +114,20 @@ class Protocol:
         )
 
     @staticmethod
-    def create_announce(peer_id: str, files_available: List[str]) -> Dict[str, Any]:
+    def create_keepalive() -> Dict[str, Any]:
         return Protocol.create_message(
             "TrackerController",
-            Protocol.COMMANDS["CREATE"],
-            func="announce",
-            args={"peer_id": peer_id, "files": files_available},
+            Protocol.COMMANDS["UPDATE"],
+            func="keepalive",
         )
 
     @staticmethod
-    def create_keepalive() -> Dict[str, Any]:
+    def create_peer_list(info_hash: str) -> Dict[str, Any]:
         return Protocol.create_message(
-            "TrackerController", Protocol.COMMANDS["UPDATE"], func="keepalive"
+            "TrackerController",
+            Protocol.COMMANDS["GET"],
+            func="peer_list",
+            args={
+                "info_hash": info_hash,
+            },
         )

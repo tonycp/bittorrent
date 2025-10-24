@@ -32,13 +32,15 @@ class TrackerHandler(BaseRequestHandler):
 
     def process_request(self, handlers: Dict[str, Any], data: bytes) -> None:
         try:
-
+            print(data)
             request_dict = Protocol.decode_message(data)
             header, data_prs = extract_header(request_dict)
             response_obj: str = handle_request(header, data_prs, handlers)
             # Codificar respuesta usando el framing del protocolo
             response_bytes = Protocol.encode_message(response_obj)
             self.request.sendall(response_bytes)
+            print(response_obj)
+            print()
         except Exception as e:
             logging.error(f"Petición inválida: {e}")
             error_bytes = Protocol.encode_message({"error": str(e)})

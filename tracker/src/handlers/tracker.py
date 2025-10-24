@@ -186,3 +186,30 @@ class TrackerController:
             "file_size": torrent.file_size,
             "total_chunks": torrent.total_chunks,
         }
+
+    @create(CREATE_TORRENT_DATASET)
+    def create_torrent(
+        self, info_hash: str, file_name: str, file_size: int, total_chunks: int
+    ):
+        # Verifica si el torrent ya existe
+        torrent = self.torrent_repo.get_by_field(info_hash=info_hash)
+        if torrent:
+            return {
+                "status": "already_exists",
+                "message": "El torrent ya está registrado",
+                "info_hash": info_hash,
+            }
+        # Crea y almacena el nuevo torrent
+        torrent = Torrent(
+            info_hash=info_hash,
+            name=file_name,
+            size=file_size,
+            chunks=total_chunks,
+            peers=[],  # Inicialmente vacío
+        )
+        self.torrent_repo.add(torrent)
+        return {
+            "status": "ok",
+            "message": "Torrent creado exitosamente",
+            "info_hash": info_hash,
+        }

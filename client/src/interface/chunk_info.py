@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ChunkInfo:
-    id: int
-    size: int
-    hash: str
+    chunk_id: int
+    chunk_size: int
+    display_size: str
+    chunk_hash: str
