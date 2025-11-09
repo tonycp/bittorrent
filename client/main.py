@@ -1,11 +1,12 @@
-import traceback, debugpy
 import tkinter as tk
+import traceback
+import debugpy
 
 from dotenv import load_dotenv
 
-from src.const import DEBUG
-from src.config import *
-from src.gui import BitTorrentClientGUI
+from torrent.const import DEBUG
+from torrent.config import get_env_settings
+from torrent.gui import BitTorrentClientGUI
 
 
 def main():

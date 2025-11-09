@@ -8,6 +8,7 @@ dependencies = [
     "aiohttp>=3.12.15",
     "asyncio>=4.0.0",
     "bencodepy>=0.9.5",
+    "dataclass-mapper>=1.9.3",
     "debugpy>=1.8.17",
     "docker>=7.1.0",
     "dotenv>=0.9.9",

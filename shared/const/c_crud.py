@@ -1,0 +1,5 @@
+CREATE = "create"
+UPDATE = "update"
+DELETE = "delete"
+GET = "get"
+GETALL = "get_all"

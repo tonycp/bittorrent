@@ -3,7 +3,7 @@
     "configurations": [
         {
             "name": "Python: Attach to debugpy",
-            "type": "python",
+            "type": "debugpy",
             "request": "attach",
             "connect": {
                 "host": "localhost",
@@ -13,9 +13,15 @@
             "pathMappings": [
                 {
                     "localRoot": "${workspaceFolder}/client",
-                    "remoteRoot": "/app" 
+                    "remoteRoot": "/app"
                 }
             ]
+        },
+        {
+            "name": "Python Package: hola",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "hola"
         }
     ]
 }

@@ -129,6 +129,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "asyncio" },
     { name = "bencodepy" },
+    { name = "dataclass-mapper" },
     { name = "debugpy" },
     { name = "docker" },
     { name = "dotenv" },
@@ -143,6 +144,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.12.15" },
     { name = "asyncio", specifier = ">=4.0.0" },
     { name = "bencodepy", specifier = ">=0.9.5" },
+    { name = "dataclass-mapper", specifier = ">=1.9.3" },
     { name = "debugpy", specifier = ">=1.8.17" },
     { name = "docker", specifier = ">=7.1.0" },
     { name = "dotenv", specifier = ">=0.9.9" },
@@ -214,6 +216,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a9/95/a3dbbb5028f35eafb79008e7522a75244477d2838f38cbb722248dabc2a8/cycler-0.12.1.tar.gz", hash = "sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c", size = 7615, upload-time = "2023-10-07T05:32:18.335Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl", hash = "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30", size = 8321, upload-time = "2023-10-07T05:32:16.783Z" },
+]
+
+[[package]]
+name = "dataclass-mapper"
+version = "1.9.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b7/ba/8202e478dbfb6ab558254942648a6f141a082cf6f14089497018bc05c45f/dataclass_mapper-1.9.3.tar.gz", hash = "sha256:d2ee99c68f474500ed258a03815449cda958dd08f961288481bdebd17c714a5d", size = 17688, upload-time = "2024-02-10T16:57:14.563Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/23/d556ed541e8c26dcaec12184a29f6a839587be89f6d2e70792af276b0e28/dataclass_mapper-1.9.3-py3-none-any.whl", hash = "sha256:c47519b57743983cba799d94fbbbd47e2584c8f1002c8390069eedb88efadfb8", size = 22776, upload-time = "2024-02-10T16:57:12.812Z" },
 ]
 
 [[package]]
