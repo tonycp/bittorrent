@@ -1,10 +1,10 @@
 from typing import Dict
 
-from shared.interface.typing import Controller, Handler, HdlDecorator, Hook
+from shared.models.typing import Controller, Handler, HdlDec, Hook
 from shared.tools import Descriptor, BaseController, ControllerMeta
 
 
-def create_decorator(command: str, transform: Handler) -> HdlDecorator:
+def create_decorator(command: str, transform: Handler) -> HdlDec:
     def decorator(func: Controller) -> Hook:
         return HookDescriptor(command, func, transform)
 
@@ -36,6 +36,6 @@ class BaseHook(BaseController, metaclass=HookMeta):
     def get_hook(cls, sub_key):
         return cls.hooks.get(sub_key)
 
-    def process(self, hdl_key: str) -> str:
+    async def process(self, hdl_key: str):
         hook = self.get_hook(hdl_key)
         return hook(self)

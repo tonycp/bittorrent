@@ -1,8 +1,9 @@
-from abc import ABC
-from shared.interface.header import decode_request
-from shared.interface.header import process_header
+from abc import ABC, abstractmethod
+from shared.models.header import decode_request, process_header
+from shared.proto import MessageProtocol as MProtocol
+from shared.models.typing import Data
+from shared.models import Request
 
-from .dispatcher import Dispatcher
 from .service import MessageService
 
 import asyncio
@@ -23,16 +24,15 @@ class HostService(MessageService, ABC):
             await server.serve_forever()
 
 
-class HandlerService(HostService):
-    def __init__(self, host, port, dispatcher: Dispatcher):
-        super().__init__(host, port)
-
-        self.dispatcher = dispatcher
-
-    async def _handle_message(self, protocol, request):
+class HandlerService(HostService, ABC):
+    async def _handle_message(self, protocol: MProtocol, request: Request):
         header, data = decode_request(request)
 
         route, hdl_key = process_header(header)
-        response = self.dispatcher.dispatch(route, hdl_key, data)
+        response = await self._dispatch_message(route, hdl_key, data)
 
         await self.send_message(protocol, response)
+
+    @abstractmethod
+    async def _dispatch_message(self, route: str, hdl_key: str, data: Data) -> Data:
+        pass

@@ -1,34 +1,52 @@
-from typing import Any, Dict, List
+from typing import Callable, Dict, List, Set
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from shared.interface.typing import Data, DataSet
+from shared.models.typing import Data, DataSet, Validated
 
-
-def _instance_data(value, v_type):
-    if isinstance(value, dict):
-        return v_type(**value)
-    else:
-        return v_type(value)
+ERROR_MESSAGE = "{func} {msg}: {name}"
 
 
-def load_data(data: Data, dataset: DataSet) -> Data:
-    """Load and validate the data from the message into a dictionary."""
+def _get_names_error(func, message: str, error: str, missings: Set[str]):
+    length = len(missings)
+    s = "" if length == 1 else "s"
+    error = error.format(length=length, s=s)
+    last = missings.pop()
 
-    result: Dict[str, Any] = {}
-    errors: List[ValueError] = []
-    for key, v_type in dataset.items():
-        is_optional = getattr(v_type, "_name", None) == "Optional"
-        value = data.get(key)
-        result[key] = None
+    args = [", ".join(missings), last]
+    name = " and ".join(args if args[0] else args[1:])
+    msg = message.format(func=func.__name__, msg=error, name=name)
+    return TypeError(msg)
 
-        if value:
-            try:
-                result[key] = _instance_data(value, v_type)
-            except Exception as e:
-                errors.append(ValueError(f"Error processing key '{key}': {e}"))
-        elif not is_optional:
-            errors.append(ValueError(f"Missing required key: {key}"))
 
-    if errors:
-        raise ValueError(f"Invalid data: {errors}")
+def _names_validate(
+    func: Callable,
+    names: List[str],
+    keys: Set[str],
+):
+    missings = names.difference(keys)
+    extra = keys.difference(names)
 
-    return result
+    if missings:
+        error = "missing {length} required positional argument{s}"
+        raise _get_names_error(func, ERROR_MESSAGE, error, missings)
+
+    if extra:
+        error = "got {length} unexpected keyword argument{s}"
+        raise _get_names_error(func, ERROR_MESSAGE, error, extra)
+
+
+def _models_validate(func_name, data: Data, dataset: DataSet) -> Dict[str, Validated]:
+    _names_validate(func_name, set(data.keys()), set(dataset.keys()))
+
+    def _validate(item):
+        key, value = item
+        try:
+            if dataset[key] is BaseModel:
+                return key, dataset[key].model_validate(value)
+            else:
+                adapter = TypeAdapter(dataset[key])
+                return key, adapter.validate_python(value)
+        except ValidationError as e:
+            raise ValueError(f"Error validating {key} for handler {func_name}: {e}")
+
+    return dict(map(_validate, data.items()))

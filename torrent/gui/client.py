@@ -561,7 +561,7 @@ class BitTorrentClientGUI:
 
             if total_download > 1024:
                 self.download_speed_label.config(
-                    text=f"⬇️ Descarga: {total_download/1024:.2f} MB/s"
+                    text=f"⬇️ Descarga: {total_download / 1024:.2f} MB/s"
                 )
             else:
                 self.download_speed_label.config(
@@ -570,7 +570,7 @@ class BitTorrentClientGUI:
 
             if total_upload > 1024:
                 self.upload_speed_label.config(
-                    text=f"⬆️ Subida: {total_upload/1024:.2f} MB/s"
+                    text=f"⬆️ Subida: {total_upload / 1024:.2f} MB/s"
                 )
             else:
                 self.upload_speed_label.config(

@@ -1,6 +1,6 @@
 from typing import Optional, Tuple, TypeAlias, Union
-from shared.interface import MetaData, BaseMessage, Request
-from shared.interface.typing import Data
+from shared.models import MetaData, BaseMessage, Request
+from shared.models.typing import Data
 from shared.const import c_proto as cp
 
 import json
@@ -43,10 +43,10 @@ class DataSerialize:
         return json_str.encode(cp.ENCODING)
 
     @staticmethod
-    def decode_message(data: bytes, in_data: bool = True) -> Union[Request, Data]:
+    def decode_message(data: bytes, in_json: bool = False) -> Union[Request, Data]:
         json_str = data.decode(cp.ENCODING)
         kwargs = json.loads(json_str)
-        return Request(**kwargs) if in_data else kwargs
+        return kwargs if in_json else Request(**kwargs)
 
     @staticmethod
     def encode_data(metadata: MetaData, binary_data: bytes) -> bytes:
@@ -55,18 +55,18 @@ class DataSerialize:
 
     @staticmethod
     def decode_data(
-        data: bytes, in_data: bool = True
+        data: bytes, in_json: bool = False
     ) -> Tuple[Union[MetaData, Data], bytes]:
         size, chunk = dts.split_size(data)
         kwargs = dts.decode_message(chunk[:size], False)
-        metadata = MetaData(**kwargs) if in_data else kwargs
+        metadata = kwargs if in_json else MetaData(**kwargs)
         return metadata, chunk[size:]
 
     @staticmethod
-    def decode(data: bytes, msg_type: int, in_data: bool = True):
+    def decode(data: bytes, msg_type: int, in_json: bool = False):
         if msg_type == cp.MSG_TYPE_JSON:
-            return dts.decode_message(data, in_data)
-        return dts.decode_data(data, in_data)
+            return dts.decode_message(data, in_json)
+        return dts.decode_data(data, in_json)
 
     @staticmethod
     def create_message(

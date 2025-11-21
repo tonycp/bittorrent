@@ -1,8 +1,9 @@
-from typing import Callable, Optional, Dict, Any, TypeAlias
-from asyncio import Protocol, Transport
-import asyncio
+from typing import Callable, Optional, TypeAlias
+from asyncio import Protocol, Transport, create_task, iscoroutine
 
+from shared.models import MetaData, Request
 from shared.const import c_proto as cp
+
 from .message import DataSerialize as dts
 
 MProtocol: TypeAlias = "MessageProtocol"
@@ -12,7 +13,7 @@ DCallback: TypeAlias = Callable[[MProtocol, Exception], None]
 
 
 class MessageProtocol(Protocol):
-    transport: Optional[asyncio.Transport]
+    transport: Optional[Transport]
 
     def __init__(
         self,
@@ -38,16 +39,16 @@ class MessageProtocol(Protocol):
         self.transport = None
         self._on_disconnect(exc)
 
-    def send_message(self, message: Dict[str, Any]):
+    def send_message(self, message: Request):
         msg_type = cp.MSG_TYPE_JSON.to_bytes(1, cp.BYTEORDER)
         data = dts.encode_message(message)
         data = msg_type + dts.add_size(data)
         if self.transport:
             self.transport.write(data)
 
-    def send_binary(self, metadata: dict, binary_data: bytes):
+    def send_binary(self, metadata: MetaData, data_bin: bytes):
         msg_type = cp.MSG_TYPE_BINARY.to_bytes(1, cp.BYTEORDER)
-        data = dts.encode_data(metadata, binary_data)
+        data = dts.encode_data(metadata, data_bin)
         data = msg_type + dts.add_size(data)
         if self.transport:
             self.transport.write(data)
@@ -86,9 +87,9 @@ class MessageProtocol(Protocol):
     def _execute_callback(self, callback, *args, **kwargs):
         if not callback:
             return
-        asyncio.create_task(self._run_callback(callback, *args, **kwargs))
+        create_task(self._run_callback(callback, *args, **kwargs))
 
     async def _run_callback(self, callback, *args, **kwargs):
         result = callback(self, *args, **kwargs)
-        if asyncio.iscoroutine(result):
+        if iscoroutine(result):
             await result

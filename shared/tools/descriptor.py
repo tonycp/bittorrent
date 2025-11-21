@@ -1,6 +1,6 @@
 from typing import Type
 from abc import ABC, abstractmethod
-from shared.interface.typing import Controller, Handler
+from shared.models.typing import Controller, Handler
 
 from .subscribe import create_wrapper, get_index_sub
 from .controller import BaseController
@@ -10,9 +10,9 @@ class Descriptor(ABC):
     _transform: Handler
 
     def __init__(self, command: str, func: Controller, id: str = None):
+        self.command = func.command = command
         self.transform = None
         self.func = func
-        self.command = command
         self.id = id
 
     def __get__(self, instance: BaseController, owner: Type[BaseController]):
@@ -23,7 +23,7 @@ class Descriptor(ABC):
     def setup(self, owner: Type[BaseController], name: str):
         pass
 
-    @abstractmethod()
+    @abstractmethod
     def register(self, owner: Type[BaseController], index: str, wrapper: Handler):
         pass
 
@@ -41,6 +41,6 @@ class Descriptor(ABC):
     def transform(self):
         return self._transform
 
-    @property.setter(transform)
+    @transform.setter
     def transform(self, transform):
         self._transform = transform

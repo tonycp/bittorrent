@@ -1,13 +1,12 @@
 from typing import Optional
 from abc import ABC, abstractmethod
 from shared.proto import MessageProtocol as MProtocol, DataSerialize as dts
-from shared.interface import Request, MetaData
-from asyncio.events import _ProtocolFactory
+from shared.models import Request, MetaData
 from shared.const import c_proto as cp
 
 
 class MessageService(ABC):
-    def create_protocol_factory(self) -> _ProtocolFactory:
+    def create_protocol_factory(self):
         def protocol_factory():
             return MProtocol(
                 self._on_response,
@@ -41,10 +40,10 @@ class MessageService(ABC):
     async def _on_disconnect(self, protocol: MProtocol, exc: Optional[Exception]):
         pass
 
-    async def send_message(self, protocol: MProtocol, message: dict):
+    async def send_message(self, protocol: MProtocol, message: Request):
         if protocol and message:
             protocol.send_message(message)
 
-    async def send_binary(self, protocol: MProtocol, metadata: dict, data: bytes):
+    async def send_binary(self, protocol: MProtocol, metadata: MetaData, data: bytes):
         if protocol:
             protocol.send_binary(metadata, data)

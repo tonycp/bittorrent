@@ -1,4 +1,4 @@
-from shared.interface.typing import Handler, HdlDecorator
+from shared.models.typing import Handler, HdlDec
 from shared.const import c_crud as cc
 
 from .hook import create_decorator
@@ -13,21 +13,21 @@ __all__ = [
 ]
 
 
-def create(transform: Handler = create_hook) -> HdlDecorator:
+def create(transform: Handler = create_hook) -> HdlDec:
     return create_decorator(cc.CREATE, transform)
 
 
-def update(transform: Handler = create_hook) -> HdlDecorator:
+def update(transform: Handler = create_hook) -> HdlDec:
     return create_decorator(cc.UPDATE, transform)
 
 
-def delete(transform: Handler = create_hook) -> HdlDecorator:
+def delete(transform: Handler = create_hook) -> HdlDec:
     return create_decorator(cc.DELETE, transform)
 
 
-def get(transform: Handler = create_hook) -> HdlDecorator:
+def get(transform: Handler = create_hook) -> HdlDec:
     return create_decorator(cc.GET, transform)
 
 
-def get_all(transform: Handler = create_hook) -> HdlDecorator:
+def get_all(transform: Handler = create_hook) -> HdlDec:
     return create_decorator(cc.GETALL, transform)

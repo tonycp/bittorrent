@@ -1,5 +1,5 @@
 from typing import Callable, Optional, Type
-from shared.interface.typing import Controller, Handler, Data
+from shared.models.typing import Controller, Handler, Data
 
 __all__ = ["create_wrapper", "get_index_sub"]
 
@@ -31,7 +31,7 @@ def create_wrapper(
         if instance:
             cls = instance.__class__.__name__
             is_static = is_static_method(func, cls)
-        result = func(instance, **data) if (is_static) else func(**data)
+        result = func(**data) if (is_static) else func(instance, **data)
         return transform(result) if transform else result
 
     return wrapper

@@ -1,6 +1,6 @@
 from typing import Dict, Optional, Set, List
 from shared.const import c_proto as cp
-from shared.interface import BlockInfo
+from shared.models import BlockInfo
 
 import asyncio
 import hashlib

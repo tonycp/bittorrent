@@ -1,3 +1,2 @@
-from .manager import *
-from .repository import *
-from .middleware import *
+from .torrent_repo import TorrentRepository as TorrentRepository
+from .peer_repo import PeerRepository as PeerRepository
