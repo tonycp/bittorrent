@@ -1,7 +1,7 @@
+from dependency_injector import containers, providers
 from shared.context import dispatcher
 
-
-from dependency_injector import containers, providers
+# from tracker.handlers import RegisterHandler, SessionHandler, TrackerHandler
 
 
 class Dispatchers(containers.DeclarativeContainer):

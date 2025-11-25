@@ -1,10 +1,10 @@
 from typing import Dict, List
 from shared.tools import BaseController
-from dependency_injector.providers import Factory
+from dependency_injector.providers import Factory, Provider
 
 
 def get_endpoint(controller: Factory[BaseController]):
-    return controller.cls.endpoint, controller
+    return controller.provides.endpoint, controller
 
 
 class Dispatcher:
@@ -16,14 +16,17 @@ class Dispatcher:
     ):
         controllers = controllers or []
         self.controllers = dict(map(get_endpoint, controllers))
-        self.actives: Dict[str, BaseController] = {}
+        self.actives: Dict[str, Factory[BaseController]] = {}
 
     def register_controller(self, factory: Factory[BaseController]):
-        key = factory.cls.endpoint
+        key = factory.provides.endpoint
         self.controllers[key] = factory
 
     async def activate_controller(self, route: str) -> BaseController:
-        return await self.controllers[route]()
+        provider = self.controllers[route]
+        if not Provider.is_async_mode_enabled(provider):
+            Provider.enable_async_mode(provider)
+        return await provider()
 
     @staticmethod
     async def process_controller(ctrl: BaseController, hdl_key: str, *args, **kwargs):

@@ -2,10 +2,13 @@ from datetime import datetime, timezone
 
 from shared.handlers.crud import create, get
 from shared.handlers.hander import BaseHandler
-
-from tracker.repos import PeerRepository, TorrentRepository
 from shared.tools.controller import controller
+
+from tracker.repos import PeerRepository, TorrentRepository, Repositories
 from tracker.schemas.torrent import PeerTable
+from dependency_injector.wiring import Closing, Provide
+
+from sqlalchemy import text
 
 from . import dtos
 
@@ -14,8 +17,8 @@ from . import dtos
 class TrackerHandler(BaseHandler):
     def __init__(
         self,
-        torrent_repo: TorrentRepository,
-        peer_repo: PeerRepository,
+        torrent_repo: TorrentRepository = Closing[Provide[Repositories.torrent_repo]],
+        peer_repo: PeerRepository = Closing[Provide[Repositories.peer_repo]],
     ):
         super().__init__()
         self.torrent_repo = torrent_repo
@@ -107,3 +110,12 @@ class TrackerHandler(BaseHandler):
         leechers = len(active_peers) - seeders
 
         return {"info_hash": info_hash, "seeders": seeders, "leechers": leechers}
+
+    @get()
+    async def prueba(self):
+        session1 = self.peer_repo.session
+        session2 = self.torrent_repo.session
+        assert session1 == session2
+
+        await session1.execute(text("SELECT 1"))
+        return session1

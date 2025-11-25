@@ -1,15 +1,16 @@
+from prueba._services import Services
 from shared.context.container import BaseContainer
 from tracker.containers.dispatcher import Dispatchers
-from tracker.containers.gateways import Gateways
-from tracker.containers.handler import Handlers
-from tracker.containers.repos import Repositories
-from tracker.settings import get_settings
+from tracker.database._gateway import Gateways
+from tracker.handlers._handler import Handlers
+from tracker.repos._repo import Repositories
+from tracker.settings import Configuration
 
 from dependency_injector import containers, providers
 
 
 class Server(containers.DeclarativeContainer):
-    config = providers.Configuration(default=get_settings(), ini_files=["./config.ini"])
+    config = providers.Configuration(pydantic_settings=[Configuration()])
 
     base = providers.Container(
         BaseContainer,
@@ -24,7 +25,7 @@ class Server(containers.DeclarativeContainer):
     repositories = providers.Container(
         Repositories,
         config=config.repositories,
-        session=gateways.session,
+        gateways=gateways,
     )
 
     handlers = providers.Container(
@@ -37,4 +38,9 @@ class Server(containers.DeclarativeContainer):
         Dispatchers,
         config=config.dispatchers,
         handlers=handlers,
+    )
+
+    services = providers.Container(
+        Services,
+        config=config.services,
     )

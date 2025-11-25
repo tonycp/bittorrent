@@ -18,10 +18,10 @@ class Database:
     def __init__(
         self,
         db_url: str,
-        echo: bool = False,
-        pool_size: int = 5,
-        max_overflow: int = 10,
-        pool_recycle: int = 3600,
+        echo: bool,
+        pool_size: int,
+        max_overflow: int,
+        pool_recycle: int,
     ) -> None:
         self._engine = create_async_engine(
             db_url,

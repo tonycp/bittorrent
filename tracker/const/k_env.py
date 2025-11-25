@@ -1,3 +1,7 @@
 DB_URL = "url_database"
+DB_ECHO = "echo_database"
+DB_POOL_SIZE = "pool_size_database"
+DB_MAX_OVERFLOW = "max_overflow_database"
+DB_POOL_RECYCLE = "pool_recycle_database"
 TRK_HOST = "host_tracker"
 TRK_PORT = "port_tracker"

@@ -1,9 +1,10 @@
 from shared.handlers.crud import create, get
 from shared.handlers.hander import BaseHandler
-
-from tracker.repos import TorrentRepository
 from shared.tools.controller import controller
+
+from tracker.repos import TorrentRepository, Repositories
 from tracker.schemas.torrent import TorrentTable
+from dependency_injector.wiring import Closing, Provide
 
 from . import dtos
 
@@ -12,7 +13,7 @@ from . import dtos
 class RegisterHandler(BaseHandler):
     def __init__(
         self,
-        torrent_repo: TorrentRepository,
+        torrent_repo: TorrentRepository = Closing[Provide[Repositories.torrent_repo]],
     ):
         super().__init__()
         self.torrent_repo = torrent_repo

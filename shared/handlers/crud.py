@@ -12,21 +12,21 @@ __all__ = [
 ]
 
 
-def create(dataset: DataSet) -> HdlDec:
+def create(dataset: DataSet = {}) -> HdlDec:
     return create_decorator(cc.CREATE, dataset)
 
 
-def update(dataset: DataSet) -> HdlDec:
+def update(dataset: DataSet = {}) -> HdlDec:
     return create_decorator(cc.UPDATE, dataset)
 
 
-def delete(dataset: DataSet) -> HdlDec:
+def delete(dataset: DataSet = {}) -> HdlDec:
     return create_decorator(cc.DELETE, dataset)
 
 
-def get(dataset: DataSet) -> HdlDec:
+def get(dataset: DataSet = {}) -> HdlDec:
     return create_decorator(cc.GET, dataset)
 
 
-def get_all(dataset: DataSet) -> HdlDec:
+def get_all(dataset: DataSet = {}) -> HdlDec:
     return create_decorator(cc.GETALL, dataset)

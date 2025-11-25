@@ -29,8 +29,10 @@ def get_default_settings(
 
     for key, path in env_key.items():
         segments = path.split("_")
-        section_key = segments[1] if len(segments) > 1 else "general"
-        name = segments[0]
+        section_key = "general"
+        if len(segments) > 1:
+            section_key = segments.pop()
+        name = "_".join(segments)
 
         default = env_default.get(f"DEFAULT_{key}")
         trans = func(path, default)

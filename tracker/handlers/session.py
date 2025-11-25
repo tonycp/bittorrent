@@ -3,10 +3,11 @@ from datetime import datetime, timezone
 from shared.handlers.crud import create, delete, update
 from shared.handlers.hander import BaseHandler
 from shared.proto.message import DataSerialize
-
-from tracker.repos import PeerRepository, TorrentRepository
 from shared.tools.controller import controller
+
+from tracker.repos import PeerRepository, TorrentRepository, Repositories
 from tracker.schemas.torrent import PeerTable
+from dependency_injector.wiring import Closing, Provide
 
 from . import dtos
 
@@ -15,8 +16,8 @@ from . import dtos
 class SessionHandler(BaseHandler):
     def __init__(
         self,
-        torrent_repo: TorrentRepository,
-        peer_repo: PeerRepository,
+        torrent_repo: TorrentRepository = Closing[Provide[Repositories.torrent_repo]],
+        peer_repo: PeerRepository = Closing[Provide[Repositories.peer_repo]],
     ):
         super().__init__()
         self.torrent_repo = torrent_repo
