@@ -1,4 +1,4 @@
-from . import crud as crud
+from . import actions as actions
 from .hook import (
     HookDescriptor as HookDescriptor,
     HookMeta as HookMeta,

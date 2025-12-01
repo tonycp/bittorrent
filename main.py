@@ -50,9 +50,9 @@ if __name__ == "__main__":
     check_config(container)
 
     modules = [__name__, handlers]
-    container.handlers.wire(modules=modules)
-    container.gateways.wire(modules=modules)
     container.repositories.wire(modules=modules)
+    container.gateways.wire(modules=modules)
+    container.handlers.wire(modules=modules)
     container.wire(modules=modules)
 
     asyncio.run(main())
