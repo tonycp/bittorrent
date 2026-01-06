@@ -1,0 +1,23 @@
+[project]
+name = "bit-lib"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "tonycp", email = "tonycadahia@gmail.com" }]
+requires-python = ">=3.13"
+dependencies = [
+    "advanced-alchemy>=1.8.1",
+    "dataclass-mapper>=1.9.3",
+    "dependency-injector>=4.48.3",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
+    "pydantic-settings-logging>=0.1.1",
+    "sqlalchemy>=2.0.45",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.15,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""

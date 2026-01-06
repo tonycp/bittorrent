@@ -1,16 +1,19 @@
 from dependency_injector.wiring import Provide, Closing, inject
-from tracker.containers import Server as ServerContainer
-from tracker.settings.config import Configuration
-from tracker.const.c_env import DEFAULT_TRK_HOST
-from tracker import TrackerService
-from tracker import handlers
+
+
+from tracker.src.containers import AppContainer as ServerContainer
+from tracker.src.settings.config import AppSettings
+from tracker.src.const.c_env import DEFAULT_TRK_HOST
+from tracker.src.services import TrackerService
+from tracker.src import handlers
+
 from typing import Awaitable
 
 import asyncio
 import socket
 
 
-def update_config(config: Configuration):
+def update_config(config: AppSettings):
     hostname = socket.gethostname()
     ip = socket.gethostbyname(hostname)
     config.tracker.host = ip
@@ -20,7 +23,7 @@ def update_config(config: Configuration):
 
 
 def check_config(container: ServerContainer):
-    config: Configuration = container.config.get_pydantic_settings()[0]
+    config: AppSettings = container.config.get_pydantic_settings()[0]
     if config.tracker.host == DEFAULT_TRK_HOST:
         update_config(config)
         container.config.from_pydantic(config)

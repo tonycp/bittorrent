@@ -4,7 +4,7 @@
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
 # User-specific folders
-*prueba
+*__injector_*
 *wiki*
 
 # User-specific files
@@ -14,7 +14,6 @@
 *.userosscache
 *.sln.docstates
 *.env
-*test.py
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

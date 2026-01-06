@@ -1,0 +1,35 @@
+from bit_lib.const import c_commands as cc
+from bit_lib.models import (
+    DataSet,
+    HdlDec,
+)
+
+from .hander import create_decorator
+
+__all__ = [
+    "create",
+    "update",
+    "delete",
+    "get",
+    "get_all",
+]
+
+
+def create(dataset: DataSet = {}) -> HdlDec:
+    return create_decorator(cc.CREATE, dataset)
+
+
+def update(dataset: DataSet = {}) -> HdlDec:
+    return create_decorator(cc.UPDATE, dataset)
+
+
+def delete(dataset: DataSet = {}) -> HdlDec:
+    return create_decorator(cc.DELETE, dataset)
+
+
+def get(dataset: DataSet = {}) -> HdlDec:
+    return create_decorator(cc.GET, dataset)
+
+
+def get_all(dataset: DataSet = {}) -> HdlDec:
+    return create_decorator(cc.GET_ALL, dataset)
