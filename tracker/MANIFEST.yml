@@ -1,0 +1,43 @@
+name: "tracker"
+type: "service"
+description: "Tracker service — manifest adapted for `uv` usage."
+
+# Entrypoint and run command. For libraries, these can be null.
+entrypoint: "src.app:main"
+start_command: "uv --directory tracker/src run app.py"
+
+# Source paths (lists). Paths are relative to the component root or repo root.
+services:
+  - "src/services"
+controllers:
+  - "src/handlers"
+repos:
+  - "src/repos"
+schemas:
+  - "src/schemas"
+context:
+  - "src/containers"
+  - "src/database"
+pydantic:
+  - "src/models"
+  - "src/settings"
+docs:
+  - "src/docs"
+
+# Test configuration.
+tests:
+  path: "src/tests"
+
+# Build configuration
+build:
+  dockerfile: "Dockerfile"
+  python_install: "pip install -e tracker"
+
+uv:
+  build_command: "uv build --directory tracker"
+  install_command: "pip install -e tracker"
+  run_example: "uv --directory tracker/src run app.py"
+
+notes: |
+  - Use `uv build --directory tracker` to produce packages for the tracker component.
+  - Install locally with `pip install -e tracker` for editable development installs.

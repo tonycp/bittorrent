@@ -1,0 +1,46 @@
+name: "bit_lib"
+type: "library"
+description: "Common library containing protocol, models and utilities used by tracker and client."
+
+# Entrypoint and run command. For libraries, these can be null.
+entrypoint: null
+start_command: null
+
+# Source paths (lists). Paths are relative to the component root or repo root.
+core:
+  - "bit_lib/core"
+context:
+  - "bit_lib/context"
+protocol:
+  - "bit_lib/proto"
+controllers:
+  - "bit_lib/tools"
+  - "bit_lib/hooks"
+  - "bit_lib/handlers"
+pydantic:
+  - "bit_lib/models"
+  - "bit_lib/errors"
+  - "bit_lib/settings"
+docs:
+  - "bit_lib/docs"
+
+# Tests configuration
+tests:
+  path: "" # no dedicated tests folder for bit_lib (fill if present)
+
+# Build configuration
+build:
+  dockerfile: "Dockerfile"
+  python_install: "pip install -e bit_lib"
+
+ports: [] # bit_lib is a library; no exposed ports
+
+uv:
+  build_command: "uv build --directory bit_lib" # build sdist/wheel using uv
+  install_command: "pip install -e bit_lib" # install editable (recommended)
+  run_example: null # e.g. "uv run --directory bit_lib run --active some_module:main"
+
+notes: |
+  - This manifest was generated automatically from the repository inventory.
+  - `bit_lib` is a library (not a running service). Use the `uv.build` backend configured in `pyproject.toml` to build packages.
+  - The `start_command` is intentionally null because the library exposes modules rather than a service entrypoint. Use `uv.run` when you need to execute a module within the library context.
