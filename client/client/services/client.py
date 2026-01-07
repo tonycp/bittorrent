@@ -1,8 +1,8 @@
-from bit_lib.core.client import ClientService
+from bit_lib.services.peer import PeerService
 from client.hooks import PeerSender
 
 
-class PeerClient(ClientService):
+class PeerClient(PeerService):
     def __init__(self):
         super().__init__()
         # Inicializamos el definidor de mensajes

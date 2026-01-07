@@ -7,7 +7,7 @@ from bit_lib.errors import (
     BaseError,
 )
 from bit_lib.models import (
-    ErrorMessage,
+    Error,
     Response,
     Controller,
     Data,
@@ -79,4 +79,4 @@ class BaseHandler(BaseController, metaclass=HandlerMeta):
             details = {"error_type": type(e).__name__}
             data_error = ServiceError(details=details).to_dict()
 
-        return ErrorMessage(data=data_error, reply_to=reply_to)
+        return Error(data=data_error, reply_to=reply_to)

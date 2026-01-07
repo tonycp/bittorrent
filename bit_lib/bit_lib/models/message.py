@@ -32,6 +32,17 @@ class MetaData(BaseMessage):
     index: int
 
 
+class Response(BaseMessage):
+    type: Literal["response"] = "response"
+
+    reply_to: str
+    data: Optional[Data] = None
+
+
+class Error(Response):
+    type: Literal["error"] = "error"
+
+
 class Request(BaseMessage):
     type: Literal["request"] = "request"
 
@@ -40,16 +51,11 @@ class Request(BaseMessage):
     func: str
     args: Optional[Data] = None
 
+    def build_response(self, data: Optional[Data] = None) -> "Response":
+        return Response(reply_to=self.msg_id, data=data)
 
-class Response(BaseMessage):
-    type: Literal["response"] = "response"
-
-    reply_to: str
-    data: Optional[Data] = None
-
-
-class ErrorMessage(Response):
-    type: Literal["error"] = "error"
+    def build_error(self, data: Optional[Data] = None) -> "Error":
+        return Error(reply_to=self.msg_id, data=data)
 
 
-MessageUnion = Union[Request, Response, ErrorMessage, MetaData]
+MessageUnion = Union[Request, Response, Error]

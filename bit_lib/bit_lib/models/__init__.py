@@ -12,7 +12,7 @@ from .message import (
     MetaData as MetaData,
     Request as Request,
     Response as Response,
-    ErrorMessage as ErrorMessage,
+    Error as Error,
     MessageUnion as MessageUnion,
 )
 

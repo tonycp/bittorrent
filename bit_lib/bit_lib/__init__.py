@@ -6,14 +6,17 @@ from . import hooks as hooks
 from . import proto as proto
 from . import tools as tools
 from . import const as const
-from . import core as core
+from . import services as services
 
 
-from .core import (
-    ClientService as ClientService,
-    HandlerService as HandlerService,
+from .services import (
+    BitService as BitService,
     HostService as HostService,
-    MessageService as MessageService,
+    ClientService as ClientService,
+    DispatcherService as DispatcherService,
+    DiscoveryService as DiscoveryService,
+    PingSweepDiscovery as PingSweepDiscovery,
+    DockerDNSDiscovery as DockerDNSDiscovery,
 )
 from .context import (
     BaseContainer as BaseContainer,
