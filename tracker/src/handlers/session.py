@@ -2,6 +2,7 @@ from bit_lib.tools.controller import controller
 from bit_lib.handlers.hander import BaseHandler
 from bit_lib.handlers.crud import create, delete, update
 from bit_lib.errors import NotAssociatedError, NotFoundError
+from bit_lib.models import HandshakeSuccess, DisconnectSuccess, KeepaliveSuccess
 
 from src.repos import PeerRepository, TorrentRepository, RepoContainer
 from src.schemas.torrent import PeerTable
@@ -55,11 +56,10 @@ class SessionHandler(BaseHandler):
             peer.protocol_version = protocol_version
             peer.last_announce = now
 
-        return {
-            "status": "ok",
-            "message": "Handshake exitoso",
-            "protocol_version": protocol_version,
-        }
+        return HandshakeSuccess(
+            message="Handshake exitoso",
+            protocol_version=protocol_version,
+        )
 
     @delete(dtos.DISCONNECT_DATASET)
     async def disconnect(
@@ -82,7 +82,7 @@ class SessionHandler(BaseHandler):
         logging.info(f"Peer {peer_id} found in torrent {info_hash}, removing")
         self.torrent_repo.remove_peer_from_torrent(info_hash, peer)
         await self.peer_repo.delete(peer)
-        return {"status": "ok", "message": "Peer desconectado"}
+        return DisconnectSuccess(message="Peer desconectado")
 
     @update(dtos.KEEPALIVE_DATASET)
     async def keepalive(
@@ -98,7 +98,7 @@ class SessionHandler(BaseHandler):
         peer.last_announce = now  # Solo actualiza el timestamp de actividad
         self.peer_repo.update_peer_activity(peer_id)
 
-        return {
-            "status": "ok",
-            "message": f"Peer {peer_id} last_announce updated to {now}",
-        }
+        return KeepaliveSuccess(
+            message=f"Peer {peer_id} keepalive actualizado",
+            last_announce=now,
+        )

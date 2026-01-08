@@ -5,6 +5,7 @@ from dependency_injector.wiring import Provide
 
 from bit_lib.handlers import BaseHandler
 from bit_lib.tools.controller import controller
+from bit_lib.models import DataResponse
 from bit_lib.handlers.crud import (
     update,
     create,
@@ -59,7 +60,9 @@ class ReplicationHandler(BaseHandler):
             torrent_hash=torrent_hash,
             peer_id=peer_id,
         )
-        return {"status": "ok", "operation": "peer_announce"}
+        return DataResponse(
+            data={"operation": "peer_announce"}
+        )
 
     # hdl_key: "Replication:update:peer_stopped"
     @update(dtos.PEER_STOPPED_DATASET)
@@ -73,14 +76,18 @@ class ReplicationHandler(BaseHandler):
             torrent_hash=torrent_hash,
             peer_id=peer_id,
         )
-        return {"status": "ok", "operation": "peer_stopped"}
+        return DataResponse(
+            data={"operation": "peer_stopped"}
+        )
 
     # hdl_key: "Replication:update:peer_completed"
     @update(dtos.PEER_COMPLETED_DATASET)
     async def peer_completed(self, peer_id: str):
         """Marca peer como seeder"""
         await self.peer_repo.mark_seed(peer_id=peer_id, is_seed=True)
-        return {"status": "ok", "operation": "peer_completed"}
+        return DataResponse(
+            data={"operation": "peer_completed"}
+        )
 
     # hdl_key: "Replication:update:replicate_events"
     @update(dtos.REPLICATE_EVENTS_DATASET)
@@ -101,12 +108,13 @@ class ReplicationHandler(BaseHandler):
             except Exception as e:
                 errors.append({"event": event_data, "error": str(e)})
         
-        return {
-            "status": "ok",
-            "applied": applied,
-            "errors": errors,
-            "source_tracker": source_tracker_id,
-        }
+        return DataResponse(
+            data={
+                "applied": applied,
+                "errors": errors,
+                "source_tracker": source_tracker_id,
+            }
+        )
 
     # hdl_key: "Replication:create:heartbeat"
     @create(dtos.HEARTBEAT_DATASET)
@@ -117,11 +125,13 @@ class ReplicationHandler(BaseHandler):
         event_count: int,
     ):
         """Recibe heartbeat de otro tracker para confirmar que está vivo"""
-        return {
-            "status": "alive",
-            "tracker_id": tracker_id,
-            "acknowledged_timestamp": last_timestamp,
-        }
+        return DataResponse(
+            data={
+                "status": "alive",
+                "tracker_id": tracker_id,
+                "acknowledged_timestamp": last_timestamp,
+            }
+        )
 
     # hdl_key: "Replication:get:request_snapshot"
     @get(dtos.REQUEST_SNAPSHOT_DATASET)
@@ -134,14 +144,17 @@ class ReplicationHandler(BaseHandler):
         
         # Obtener el VC más reciente de este tracker
         last_event = await self.event_repo.get_latest_by_tracker(tracker_id)
-        vc = last_event.vector_clock if last_event else {tracker_id: 0}
+        from bit_lib.context import VectorClock
+        vc = last_event.vector_clock if last_event else VectorClock(clock={tracker_id: 0})
         
-        return {
-            "source_tracker_id": tracker_id,
-            "vector_clock": vc,
-            "torrents": [t.model_dump() for t in torrents],
-            "peers": [p.model_dump() for p in peers],
-        }
+        return DataResponse(
+            data={
+                "source_tracker_id": tracker_id,
+                "vector_clock": vc.to_dict() if hasattr(vc, 'to_dict') else vc,
+                "torrents": [t.model_dump() for t in torrents],
+                "peers": [p.model_dump() for p in peers],
+            }
+        )
 
     # hdl_key: "Replication:update:replicate_snapshot"
     @update(dtos.REPLICATE_SNAPSHOT_DATASET)
@@ -164,10 +177,12 @@ class ReplicationHandler(BaseHandler):
             # TODO: implementar create/upsert en torrent_repo
             pass
         
-        return {
-            "status": "snapshot_applied",
-            "source_tracker": source_tracker_id,
-            "torrents_count": len(torrents),
-            "peers_count": len(peers),
-            "vector_clock": vector_clock,
-        }
+        return DataResponse(
+            data={
+                "status": "snapshot_applied",
+                "source_tracker": source_tracker_id,
+                "torrents_count": len(torrents),
+                "peers_count": len(peers),
+                "vector_clock": vector_clock,
+            }
+        )

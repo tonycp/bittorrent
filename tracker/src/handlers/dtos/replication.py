@@ -1,6 +1,7 @@
 from pydantic import StrictStr, StrictInt
-from typing import Dict, List
+from typing import List
 
+from bit_lib.context import VectorClock
 from src.models import Peer, Torrent, EventLog
 
 
@@ -39,7 +40,7 @@ HEARTBEAT_DATASET = {
 # Para snapshot inicial (tracker nuevo)
 REPLICATE_SNAPSHOT_DATASET = {
     "source_tracker_id": StrictStr,
-    "vector_clock": Dict[StrictStr, StrictInt],
+    "vector_clock": VectorClock,
     "torrents": List[Torrent],
     "peers": List[Peer],
 }

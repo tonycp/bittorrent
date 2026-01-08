@@ -49,4 +49,5 @@ class AppContainer(DeclarativeContainer):
         config=config.services,
         dispatcher=dispatchers,
         repos=repositories,
+        handlers=handlers,
     )

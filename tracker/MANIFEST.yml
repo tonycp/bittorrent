@@ -1,4 +1,4 @@
-name: "tracker"
+name: "Bit"
 type: "service"
 description: "Distributed tracker service with replication, event sourcing and peer management."
 

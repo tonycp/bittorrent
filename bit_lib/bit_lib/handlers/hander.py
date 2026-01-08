@@ -1,4 +1,5 @@
 from bit_lib.tools import Descriptor, BaseController, ControllerMeta
+from pydantic import BaseModel
 
 from typing import Dict, Type
 from bit_lib.errors import (
@@ -72,6 +73,8 @@ class BaseHandler(BaseController, metaclass=HandlerMeta):
     async def process(self, hdl_key: str, data: Data, reply_to: str = None) -> Response:
         try:
             response_data = await self._exec_handler(hdl_key, data)
+            if isinstance(response_data, BaseModel):
+                response_data = response_data.model_dump()
             return Response(data=response_data, reply_to=reply_to)
         except ValidationError as e:
             error_msg = f"Error de validación de entrada: {e.errors()}"

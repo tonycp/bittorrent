@@ -29,7 +29,7 @@ class BaseSettings(Settings):
                 formatter="detailed",
             ),
             "file": TimedRotatingFileHandlerConfig(
-                filename="tracker",
+                filename="Bit",
                 level="INFO",
                 when="M",
                 interval=15,

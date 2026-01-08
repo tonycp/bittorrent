@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from dependency_injector.wiring import Provide
 
@@ -8,6 +8,7 @@ from bit_lib.handlers import BaseHandler
 from bit_lib.tools.controller import controller
 from bit_lib.handlers.crud import get, create, update
 from bit_lib.errors import ServiceError
+from bit_lib.context import CacheManager, VectorClock
 
 from src.models import EventLog
 from src.repos import RepoContainer, EventLogRepository
@@ -23,33 +24,33 @@ class EventHandler(BaseHandler):
     ):
         super().__init__()
         self.event_repo = event_repo
-        self._cached_vc_by_tracker: Dict[str, Dict[str, int]] = {}
+        
+        # Caché de VectorClock por tracker con TTL de 30s
+        self._vc_cache = CacheManager(default_ttl=30, name="event_vc_cache")
 
-    async def get_current_vc(self, tracker_id: str) -> Dict[str, int]:
-        """Obtiene VC actual para un tracker concreto desde su último evento"""
-        if tracker_id in self._cached_vc_by_tracker:
-            return dict(self._cached_vc_by_tracker[tracker_id])
-
-        last_event = await self.event_repo.get_latest_by_tracker(tracker_id)
-        if last_event:
-            vc = dict(last_event.vector_clock)
-        else:
-            vc = {tracker_id: 0}
-
-        self._cached_vc_by_tracker[tracker_id] = vc
-        return dict(vc)
-
-    def _cache_vc(self, tracker_id: str, vc: Dict[str, int]):
-        self._cached_vc_by_tracker[tracker_id] = dict(vc)
+    async def get_current_vc(self, tracker_id: str) -> VectorClock:
+        """Obtiene VectorClock actual para un tracker desde su último evento"""
+        async def fetch_vc() -> VectorClock:
+            """Fetch function que obtiene VC del último evento"""
+            recent_event = await self.event_repo.get_latest_by_tracker(tracker_id)
+            if recent_event:
+                return recent_event.vector_clock
+            else:
+                return VectorClock(clock={tracker_id: 0})
+        
+        vc = await self._vc_cache.get_or_fetch(
+            tracker_id,
+            fetch_vc
+        )
+        
+        return vc if vc else VectorClock(clock={tracker_id: 0})
 
     def _should_apply(
-        self, local_vc: Dict[str, int], remote_vc: Dict[str, int]
+        self, local_vc: VectorClock, remote_vc: VectorClock
     ) -> bool:
-        """Valida orden causal"""
-        keys = set(remote_vc) | set(local_vc)
-        less_or_equal = all(local_vc.get(k, 0) <= remote_vc.get(k, 0) for k in keys)
-        strictly_less = any(local_vc.get(k, 0) < remote_vc.get(k, 0) for k in keys)
-        return less_or_equal and strictly_less
+        """Valida orden causal: retorna True si remote_vc puede aplicarse"""
+        # Aplicar si: local_vc <= remote_vc (existe causalidad)
+        return local_vc <= remote_vc
 
     # hdl_key: "Event:get:last_event"
     @get(dtos.GET_LAST_EVENT_DATASET)
@@ -67,18 +68,21 @@ class EventHandler(BaseHandler):
     ):
         """Crea evento local (genérico para cualquier operación)"""
         current_vc = await self.get_current_vc(tracker_id)
-        current_vc[tracker_id] = current_vc.get(tracker_id, 0) + 1
+        current_vc.increment(tracker_id)
 
         event = EventLog(
             tracker_id=tracker_id,
             vector_clock=current_vc,
             operation=operation,  # "peer_announce", "peer_stopped", etc.
-            timestamp=current_vc[tracker_id],
+            timestamp=current_vc.get(tracker_id),
             data=data,
         )
 
         await self.event_repo.add(event)
-        self._cache_vc(tracker_id, current_vc)
+        
+        # Invalidar caché después de crear evento
+        await self._vc_cache.invalidate(tracker_id)
+        await self._vc_cache.invalidate(tracker_id)
 
         # Retornar evento para replicación
         return EventSuccess(request=event.model_dump())
@@ -94,9 +98,12 @@ class EventHandler(BaseHandler):
         data: Dict[str, Any],
     ):
         """Aplica evento remoto (valida VC y delega a ReplicationHandler)"""
+        # Convertir Dict a VectorClock
+        remote_vc = VectorClock.from_dict(vector_clock)
+        
         event = EventLog(
             tracker_id=tracker_id,
-            vector_clock=vector_clock,
+            vector_clock=remote_vc,
             operation=operation,
             timestamp=timestamp,
             data=data,
@@ -104,17 +111,17 @@ class EventHandler(BaseHandler):
 
         # Validar orden causal
         current_vc = await self.get_current_vc(tracker_id)
-        if not self._should_apply(current_vc, event.vector_clock):
+        if not self._should_apply(current_vc, remote_vc):
             raise ServiceError(
                 details={
                     "reason": "event out of order",
-                    "local_vc": current_vc,
-                    "remote_vc": event.vector_clock,
+                    "local_vc": current_vc.to_dict(),
+                    "remote_vc": remote_vc.to_dict(),
                 }
             )
 
-        # Actualizar cache local con VC remoto aplicado
-        self._cache_vc(tracker_id, event.vector_clock)
+        # Invalidar caché después de aplicar evento remoto
+        await self._vc_cache.invalidate(tracker_id)
 
         # Retornar evento para ReplicationHandler
         return EventSuccess(request=event.model_dump())

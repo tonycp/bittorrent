@@ -1,14 +1,14 @@
-from datetime import datetime, timezone
+"""Handler para operaciones del registro distribuido de trackers"""
 
-from bit_lib.handlers.crud import create, get
+from bit_lib.handlers.crud import create, get, update, delete
 from bit_lib.handlers.hander import BaseHandler
 from bit_lib.tools.controller import controller
+from bit_lib.context import VectorClock
+from bit_lib.models import DataResponse
 
-from src.repos import PeerRepository, TorrentRepository, RepoContainer
-from src.schemas.torrent import PeerTable
+from src.repos import TrackerRepository, RepoContainer
+from src.models.tracker import Tracker
 from dependency_injector.wiring import Closing, Provide
-
-from sqlalchemy import text
 
 from . import dtos
 
@@ -17,105 +17,142 @@ from . import dtos
 class TrackerHandler(BaseHandler):
     def __init__(
         self,
-        torrent_repo: TorrentRepository = Closing[Provide[RepoContainer.torrent_repo]],
-        peer_repo: PeerRepository = Closing[Provide[RepoContainer.peer_repo]],
+        tracker_repo: TrackerRepository = Closing[Provide[RepoContainer.tracker_repo]],
     ):
         super().__init__()
-        self.torrent_repo = torrent_repo
-        self.peer_repo = peer_repo
+        self.tracker_repo = tracker_repo
 
-    @create(dtos.ANNOUNCE_DATASET)
-    async def announce(
+    @create(dtos.REGISTER_TRACKER_DATASET)
+    async def register_tracker(
         self,
-        info_hash: str,
-        peer_id: str,
-        ip: str,
+        tracker_id: str,
+        host: str,
         port: int,
-        left: int,
-        event: str = None,  # Agregado para manejar eventos BT
+        status: str = "online",
+        vector_clock: dict = None,
     ):
-        # Buscar el torrent
-        torrent = await self.torrent_repo.get(info_hash)
-        if not torrent:
-            raise ValueError("Torrent no encontrado")
+        """Registra o actualiza un tracker en la red distribuida"""
+        vc = VectorClock.from_dict(vector_clock) if vector_clock else VectorClock()
 
-        # Buscar el peer
-        peer = await self.peer_repo.get(peer_id)
-        now = datetime.now(timezone.utc)
+        tracker = Tracker(
+            tracker_id=tracker_id,
+            host=host,
+            port=port,
+            status=status,
+            vector_clock=vc,
+        )
 
-        if not peer:
-            peer = PeerTable(
-                peer_id=peer_id,
-                ip=ip,
-                port=port,
-                left=left,
-                last_announce=now,
-                is_seed=(event == "completed"),
-            )
-            await self.peer_repo.add(peer)
-            await self.torrent_repo.add_peer_to_torrent(torrent.info_hash, peer)
-        else:
-            peer.ip = ip
-            peer.port = port
-            peer.left = left
-            peer.last_announce = now
-            if event == "completed":
-                peer.is_seed = True
-            if event == "stopped":
-                if peer in torrent.peers:
-                    torrent.peers.remove(peer)  # O marcar el peer para limpieza
+        await self.tracker_repo.upsert(tracker)
 
-        # Listar peers activos (limpia los inactivos: ejemplo, en los últimos 2 x interval)
-        interval = 1800
-        active_peers = [{"ip": p.ip, "port": p.port} for p in torrent.peers]
+        return DataResponse(
+            data={
+                "tracker_id": tracker_id,
+                "status": "registered",
+                "vector_clock": vc.to_dict(),
+            }
+        )
 
-        return {
-            "interval": interval,
-            "peers": active_peers,
-        }
+    @get(dtos.GET_TRACKER_DATASET)
+    async def get_tracker(self, tracker_id: str):
+        """Obtiene información de un tracker específico"""
+        tracker = await self.tracker_repo.get_by_tracker_id(tracker_id)
 
-    @get(dtos.PEER_LIST_DATASET)
-    async def peer_list(
-        self,
-        info_hash: str,
-    ):
-        torrent = await self.torrent_repo.get(info_hash)
-        if not torrent:
-            raise ValueError("Torrent no encontrado")
+        if not tracker:
+            raise ValueError(f"Tracker {tracker_id} no encontrado")
 
-        active_peers = [
-            {"peer_id": p.id, "ip": p.ip, "port": p.port} for p in torrent.peers
-        ]
+        return DataResponse(
+            data={
+                "tracker_id": tracker.tracker_id,
+                "host": tracker.host,
+                "port": tracker.port,
+                "status": tracker.status,
+                "vector_clock": tracker.vector_clock.to_dict(),
+                "created_at": tracker.created_at.isoformat()
+                if tracker.created_at
+                else None,
+                "updated_at": tracker.updated_at.isoformat()
+                if tracker.updated_at
+                else None,
+            }
+        )
 
-        return {"info_hash": info_hash, "peers": active_peers}
+    @get(dtos.GET_ACTIVE_TRACKERS_DATASET)
+    async def get_active_trackers(self, ttl_minutes: int = 30):
+        """Obtiene lista de trackers activos en la red"""
+        trackers = await self.tracker_repo.get_active_trackers(ttl_minutes)
 
-    @get(dtos.GET_PEERS_DATASET)
-    async def scrape(
-        self,
-        info_hash: str,
-    ):
-        torrent = await self.torrent_repo.get(info_hash)
-        if not torrent:
-            raise ValueError("Torrent no encontrado")
+        return DataResponse(
+            data={
+                "count": len(trackers),
+                "trackers": [
+                    {
+                        "tracker_id": t.tracker_id,
+                        "host": t.host,
+                        "port": t.port,
+                        "status": t.status,
+                        "vector_clock": t.vector_clock.to_dict(),
+                    }
+                    for t in trackers
+                ],
+            }
+        )
 
-        now = datetime.now(timezone.utc)
-        interval = 1800
-        active_peers = [
-            p
-            for p in torrent.peers
-            if p.last_announce
-            and (now - p.last_announce).total_seconds() < 2 * interval
-        ]
-        seeders = sum(1 for p in active_peers if getattr(p, "is_seed", False))
-        leechers = len(active_peers) - seeders
+    @get(dtos.GET_ALL_TRACKERS_DATASET)
+    async def get_all_trackers(self):
+        """Obtiene todos los trackers registrados"""
+        trackers = await self.tracker_repo.get_all()
 
-        return {"info_hash": info_hash, "seeders": seeders, "leechers": leechers}
+        return DataResponse(
+            data={
+                "count": len(trackers),
+                "trackers": [
+                    {
+                        "tracker_id": t.tracker_id,
+                        "host": t.host,
+                        "port": t.port,
+                        "status": t.status,
+                        "vector_clock": t.vector_clock.to_dict(),
+                        "updated_at": t.updated_at.isoformat()
+                        if t.updated_at
+                        else None,
+                    }
+                    for t in trackers
+                ],
+            }
+        )
 
-    @get()
-    async def prueba(self):
-        session1 = self.peer_repo.session
-        session2 = self.torrent_repo.session
-        assert session1 == session2
+    @update(dtos.UPDATE_LAST_SEEN_DATASET)
+    async def update_last_seen(self, tracker_id: str):
+        """Actualiza el timestamp de última actividad de un tracker"""
+        await self.tracker_repo.update_last_seen(tracker_id)
 
-        await session1.execute(text("SELECT 1"))
-        return session1
+        return DataResponse(
+            data={
+                "tracker_id": tracker_id,
+                "status": "updated",
+            }
+        )
+
+    @update(dtos.MARK_INACTIVE_DATASET)
+    async def mark_inactive(self, tracker_id: str):
+        """Marca un tracker como inactivo"""
+        await self.tracker_repo.mark_inactive(tracker_id)
+
+        return DataResponse(
+            data={
+                "tracker_id": tracker_id,
+                "status": "inactive",
+            }
+        )
+
+    @delete(dtos.REMOVE_DEAD_TRACKERS_DATASET)
+    async def remove_dead_trackers(self, ttl_minutes: int = 60):
+        """Elimina trackers muertos o inactivos por mucho tiempo"""
+        count = await self.tracker_repo.remove_dead_trackers(ttl_minutes)
+
+        return DataResponse(
+            data={
+                "removed_count": count,
+                "ttl_minutes": ttl_minutes,
+            }
+        )

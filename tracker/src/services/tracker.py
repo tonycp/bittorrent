@@ -10,15 +10,21 @@ class TrackerService(DispatcherService):
         host: str,
         port: int,
         dispatcher: Dispatcher,
+        discovery_service=None,
         replication_service=None,
         cleanup_service=None,
     ):
         super().__init__(host, port, dispatcher)
+        self.discovery_service = discovery_service
         self.replication_service = replication_service
         self.cleanup_service = cleanup_service
 
     async def run(self):
         """Start tracker service and background loops"""
+        # Iniciar descubrimiento dinámico primero (para que trackers se registren)
+        if self.discovery_service:
+            await self.discovery_service.start()
+        
         # Iniciar loops de replicación si existe el servicio
         if self.replication_service:
             await self.replication_service.start_replication_loops()
@@ -32,6 +38,10 @@ class TrackerService(DispatcherService):
 
     async def stop(self):
         """Stop tracker service and background loops"""
+        # Detener descubrimiento dinámico
+        if self.discovery_service:
+            await self.discovery_service.stop()
+        
         # Detener loops de replicación
         if self.replication_service:
             await self.replication_service.stop_replication_loops()

@@ -1,9 +1,11 @@
 from dependency_injector import containers, providers
 
 from . import (
+    bit,
     registry,
     session,
     tracker,
+    maintenance,
     event,
     replication,
 )
@@ -19,14 +21,24 @@ class HandlerContainer(DeclarativeContainer):
     config = Configuration()
     repo = DependenciesContainer()
     wiring_config = WiringConfiguration(
-        modules=[registry, session, tracker, event, replication],
+        modules=[registry, session, bit, tracker, maintenance, event, replication],
         auto_wire=True,
     )
 
-    tracker_hdl = Factory(
-        tracker.TrackerHandler,
+    bit_hdl = Factory(
+        bit.BitHandler,
         torrent_repo=repo.torrent_repo,
         peer_repo=repo.peer_repo,
+    )
+    tracker_hdl = Factory(
+        tracker.TrackerHandler,
+        tracker_repo=repo.tracker_repo,
+    )
+    maintenance_hdl = Factory(
+        maintenance.MaintenanceHandler,
+        peer_repo=repo.peer_repo,
+        torrent_repo=repo.torrent_repo,
+        event_repo=repo.event_log_repo,
     )
     register_hdl = Factory(
         registry.RegisterHandler,

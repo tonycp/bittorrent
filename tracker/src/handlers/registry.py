@@ -2,6 +2,7 @@ from bit_lib.tools.controller import controller
 from bit_lib.handlers.hander import BaseHandler
 from bit_lib.handlers.crud import create, get
 from bit_lib.errors import NotFoundError, ResourceConflictError
+from bit_lib.models import DataResponse, RegisterSuccess
 
 from src.repos import TorrentRepository, RepoContainer
 from src.schemas.torrent import TorrentTable
@@ -31,12 +32,14 @@ class RegisterHandler(BaseHandler):
         if not torrent:
             raise NotFoundError(info_hash, res_type="Torrent")
 
-        return {
-            "info_hash": info_hash,
-            "file_name": torrent.name,
-            "file_size": torrent.size,
-            "total_chunks": torrent.chunks,
-        }
+        return DataResponse(
+            data={
+                "info_hash": info_hash,
+                "file_name": torrent.name,
+                "file_size": torrent.size,
+                "total_chunks": torrent.chunks,
+            }
+        )
 
     @create(dtos.CREATE_TORRENT_DATASET)
     async def create_torrent(
@@ -61,6 +64,7 @@ class RegisterHandler(BaseHandler):
         )
 
         await self.torrent_repo.add(torrent)
-        return {
-            "info_hash": info_hash,
-        }
+        return RegisterSuccess(
+            message="Torrent registrado exitosamente",
+            info_hash=info_hash,
+        )

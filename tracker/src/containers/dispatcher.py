@@ -14,7 +14,9 @@ class DispatcherContainer(DeclarativeContainer):
     tracker = Factory(
         Dispatcher,
         controllers=[
+            handlers.bit_hdl,
             handlers.tracker_hdl,
+            handlers.maintenance_hdl,
             handlers.register_hdl,
             handlers.session_hdl,
             handlers.event_hdl,

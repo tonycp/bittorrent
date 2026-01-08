@@ -12,3 +12,5 @@ from .discovery import (
     PingSweepDiscovery as PingSweepDiscovery,
     DockerDNSDiscovery as DockerDNSDiscovery,
 )
+
+from .maintenance import RemoteMaintenance as RemoteMaintenance

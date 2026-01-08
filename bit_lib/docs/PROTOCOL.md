@@ -56,7 +56,7 @@ Este documento describe el protocolo de comunicación implementado en `bit_lib/p
 ```json
 {
   "type": "request",
-  "controller": "tracker",
+  "controller": "Bit",
   "command": "announce",
   "func": "register_peer",
   "args": {

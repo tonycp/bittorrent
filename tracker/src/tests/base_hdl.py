@@ -28,9 +28,9 @@ async def announce(
     left,
     event,
 ):
-    route = handlers.TrackerHandler.endpoint
-    method = handlers.TrackerHandler.announce.__name__
-    command = handlers.TrackerHandler.announce.command
+    route = handlers.BitHandler.endpoint
+    method = handlers.BitHandler.announce.__name__
+    command = handlers.BitHandler.announce.command
     data = {
         "info_hash": info_hash,
         "peer_id": peer_id,
@@ -70,9 +70,9 @@ async def keepalive(peer_id):
 
 
 async def peer_list(info_hash):
-    route = handlers.TrackerHandler.endpoint
-    method = handlers.TrackerHandler.peer_list.__name__
-    command = handlers.TrackerHandler.peer_list.command
+    route = handlers.BitHandler.endpoint
+    method = handlers.BitHandler.peer_list.__name__
+    command = handlers.BitHandler.peer_list.command
     data = {"info_hash": info_hash}
 
     await exec_test(route, method, command, data)
