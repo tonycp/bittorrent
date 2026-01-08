@@ -28,8 +28,9 @@ class BaseMessage(BaseModel):
 class MetaData(BaseMessage):
     type: Literal["metadata"] = "metadata"
 
-    hash: str
     index: int
+    hash: str
+    total: int
 
 
 class Response(BaseMessage):

@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
 
+from .message import Request
+
 
 class SuccessResponse(BaseModel):
     status: str = Field(default="ok", description="Estado de la operación.")
@@ -22,3 +24,7 @@ class KeepaliveSuccess(SuccessResponse):
 
 class RegisterSuccess(SuccessResponse):
     info_hash: str
+
+
+class EventSuccess(SuccessResponse):
+    request: Request

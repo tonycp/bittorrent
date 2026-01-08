@@ -3,3 +3,5 @@ from .torrent import (
     Torrent as Torrent,
     Peer as Peer,
 )
+
+from .event import EventLog as EventLog

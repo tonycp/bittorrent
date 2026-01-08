@@ -1,6 +1,6 @@
 from dependency_injector import containers, providers
 
-from . import peer, torrent
+from . import peer, torrent, event
 
 DeclarativeContainer = containers.DeclarativeContainer
 WiringConfiguration = containers.WiringConfiguration
@@ -24,5 +24,10 @@ class RepoContainer(DeclarativeContainer):
 
     torrent_repo = Factory(
         torrent.TorrentRepository,
+        session=gateways.session,
+    )
+
+    event_log_repo = Factory(
+        event.EventLogRepository,
         session=gateways.session,
     )

@@ -63,12 +63,15 @@ class BaseHandler(BaseController, metaclass=HandlerMeta):
     def get_handler(cls, sub_key: str) -> HdlInfo:
         return cls._handlers.get(sub_key)
 
-    async def process(self, hdl_key: str, data: Data, reply_to: str = None) -> Response:
+    async def _exec_handler(self, hdl_key, data):
         handler, dataset = self.get_handler(hdl_key)
+        validate_data = _models_validate(handler.__name__, data, dataset)
+        response_data = await handler(self, validate_data)
+        return response_data
 
+    async def process(self, hdl_key: str, data: Data, reply_to: str = None) -> Response:
         try:
-            validate_data = _models_validate(handler.__name__, data, dataset)
-            response_data = await handler(self, validate_data)
+            response_data = await self._exec_handler(hdl_key, data)
             return Response(data=response_data, reply_to=reply_to)
         except ValidationError as e:
             error_msg = f"Error de validación de entrada: {e.errors()}"

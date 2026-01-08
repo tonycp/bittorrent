@@ -2,7 +2,10 @@ from ._client import ClientService as ClientService
 from ._host import HostService as HostService
 from .base import BitService as BitService
 
-from .dispatcher import DispatcherService as DispatcherService
+from .dispatcher import (
+    DispatcherService as DispatcherService,
+    UniqueService as UniqueService,
+)
 
 from .discovery import (
     DiscoveryService as DiscoveryService,

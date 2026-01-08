@@ -13,6 +13,7 @@ from .services import (
     BitService as BitService,
     HostService as HostService,
     ClientService as ClientService,
+    UniqueService as UniqueService,
     DispatcherService as DispatcherService,
     DiscoveryService as DiscoveryService,
     PingSweepDiscovery as PingSweepDiscovery,

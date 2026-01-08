@@ -22,6 +22,7 @@ from .responses import (
     KeepaliveSuccess as KeepaliveSuccess,
     RegisterSuccess as RegisterSuccess,
     SuccessResponse as SuccessResponse,
+    EventSuccess as EventSuccess,
 )
 
 

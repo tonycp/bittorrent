@@ -1,6 +1,12 @@
 from dependency_injector import containers, providers
 
-from . import registry, session, tracker
+from . import (
+    registry,
+    session,
+    tracker,
+    event,
+    replication,
+)
 
 DeclarativeContainer = containers.DeclarativeContainer
 WiringConfiguration = containers.WiringConfiguration
@@ -28,6 +34,15 @@ class HandlerContainer(DeclarativeContainer):
     )
     session_hdl = Factory(
         session.SessionHandler,
+        torrent_repo=repo.torrent_repo,
+        peer_repo=repo.peer_repo,
+    )
+    event_hdl = Factory(
+        event.EventHandler,
+        event_repo=repo.event_repo,
+    )
+    replication_hdl = Factory(
+        replication.ReplicationHandler,
         torrent_repo=repo.torrent_repo,
         peer_repo=repo.peer_repo,
     )

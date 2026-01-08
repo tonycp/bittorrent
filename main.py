@@ -1,11 +1,11 @@
 from dependency_injector.wiring import Provide, Closing, inject
 
 
-from tracker.src.containers import AppContainer as ServerContainer
-from tracker.src.settings.config import AppSettings
-from tracker.src.const.c_env import DEFAULT_TRK_HOST
-from tracker.src.services import TrackerService
-from tracker.src import handlers
+from src.containers import AppContainer as ServerContainer
+from src.settings.config import AppSettings
+from src.const.c_env import DEFAULT_TRK_HOST
+from src.services import TrackerService
+from src import handlers
 
 from typing import Awaitable
 

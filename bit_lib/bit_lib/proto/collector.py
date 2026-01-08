@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from bit_lib.const import c_proto as cp
 
 from typing import (
@@ -17,9 +20,15 @@ Lock = asyncio.Lock
 Event = asyncio.Event
 
 
+@dataclass
+class BlockCollectorCache:
+    block: BlockCollector
+    task: asyncio.Task
+    timestamp: float
+
+
 class BlockCollector:
-    def __init__(self, index: int, hash: str, total: int, size: int = cp.BLOCK_SIZE):
-        self.index = index
+    def __init__(self, hash: str, total: int, size: int = cp.BLOCK_SIZE):
         self.hash = hash
         self.total = total
         self.size = size
@@ -45,7 +54,7 @@ class BlockCollector:
             info = BlockInfo(offset=offset, size=size, received=False)
             self.blocks[block_index] = info
 
-    def _is_complete(self) -> bool:
+    def is_complete(self) -> bool:
         return len(self.received_blocks) == len(self.blocks)
 
     def _reset_block(self):
@@ -68,23 +77,21 @@ class BlockCollector:
             return False
 
         async with self._lock:
-            if block_index not in self.blocks:
+            if block_index >= len(self.blocks):
                 return False
 
             block = self.blocks[block_index]
 
-            if len(block_data) != block.size:
-                return False
+            if block.received or block.size != len(block_data):
+                return block.received
 
             block.data = block_data
             block.received = True
             self.received_blocks.add(block_index)
 
-            if self._is_complete():
-                await self._assemble_block()
-                if await self._verify_block():
-                    self._event.set()
-                    return True
+            if self.is_complete():
+                await self.try_assemble_block()
+                return True
 
             return True
 
@@ -95,6 +102,11 @@ class BlockCollector:
     async def wait_for_completion(self) -> Optional[bytes]:
         await self._event.wait()
         return self.complete_data if self.verified else None
+
+    async def try_assemble_block(self):
+        await self._assemble_block()
+        if await self._verify_block():
+            self._event.set()
 
     async def _assemble_block(self):
         chunk_data = bytearray(self.total)
