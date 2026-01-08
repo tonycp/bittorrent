@@ -7,8 +7,8 @@ entrypoint: null
 start_command: null
 
 # Source paths (lists). Paths are relative to the component root or repo root.
-core:
-  - "bit_lib/core"
+services:
+  - "bit_lib/services"
 context:
   - "bit_lib/context"
 protocol:

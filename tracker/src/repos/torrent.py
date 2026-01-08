@@ -58,3 +58,18 @@ class TorrentRepository(SQLAlchemyAsyncRepository[TorrentTable]):
             "seeders": seeders,
             "leechers": leechers,
         }
+
+    async def remove_orphaned_torrents(self) -> int:
+        """Elimina torrents sin peers asociados y retorna el número eliminado"""
+        stmt = select(TorrentTable).options(selectinload(TorrentTable.peers))
+        result = await self.session.execute(stmt)
+        all_torrents = result.scalars().all()
+        
+        count = 0
+        for torrent in all_torrents:
+            if not torrent.peers or len(torrent.peers) == 0:
+                await self.delete(torrent.id)
+                count += 1
+        
+        await self.session.commit()
+        return count

@@ -35,7 +35,6 @@ class AppContainer(DeclarativeContainer):
 
     handlers = Container(
         HandlerContainer,
-        config=config.handlers,
         repo=repositories,
     )
 
@@ -48,4 +47,6 @@ class AppContainer(DeclarativeContainer):
     services = Container(
         ServiceContainer,
         config=config.services,
+        dispatcher=dispatchers,
+        repos=repositories,
     )

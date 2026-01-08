@@ -1,10 +1,27 @@
 name: "tracker"
 type: "service"
-description: "Tracker service — manifest adapted for `uv` usage."
+description: "Distributed tracker service with replication, event sourcing and peer management."
 
 # Entrypoint and run command. For libraries, these can be null.
 entrypoint: "src.app:main"
 start_command: "uv --directory tracker/src run app.py"
+
+# Network configuration
+ports:
+  rpc: 5555  # Puerto principal para RPC (Tracker, Session, Register handlers)
+  replication_range: "5560-5569"  # Rango sugerido para trackers adicionales en cluster
+
+# Distributed architecture
+distribution:
+  mode: "multi-tracker"  # Múltiples trackers con replicación
+  replication:
+    protocol: "event-based"  # Replicación basada en event log con vector clocks
+    consistency: "eventual"  # Consistencia eventual con orden causal
+    min_replicas: 2  # Mínimo 2 réplicas para tolerar 1 fallo
+    fault_tolerance: 2  # Tolerancia a 2 fallos simultáneos (requiere 3+ trackers)
+  discovery:
+    method: "static"  # Configuración estática de vecinos en settings
+    future: "broadcast/multicast en subred local"  # Futuro: descubrimiento automático
 
 # Source paths (lists). Paths are relative to the component root or repo root.
 services:
@@ -39,5 +56,50 @@ uv:
   run_example: "uv --directory tracker/src run app.py"
 
 notes: |
-  - Use `uv build --directory tracker` to produce packages for the tracker component.
-  - Install locally with `pip install -e tracker` for editable development installs.
+  ## Arquitectura Distribuida
+  
+  El tracker implementa un sistema distribuido con:
+  - **Event sourcing**: Todos los cambios (announce, stop, completed) se registran como eventos con vector clocks
+  - **Replicación**: EventLog replicado entre trackers vecinos con validación de orden causal
+  - **Consistencia eventual**: Los trackers convergen mediante gossip periódico de eventos
+  - **Tolerancia a fallos**: Configuración de N trackers tolera hasta (N-1)/2 fallos simultáneos
+  
+  ## Puertos y Networking
+  
+  - Puerto RPC principal: `5555` (configurable en `settings/services.py`)
+  - Rango sugerido para cluster: `5560-5569` para trackers adicionales
+  - Comunicación tracker-tracker: mismo protocolo RPC con endpoints `Replication` y `Event`
+  
+  ## Configuración de Vecinos
+  
+  Editar `config.json` o variables de entorno:
+  ```json
+  {
+    "services": {
+      "tracker_id": "tracker-1",
+      "neighbors": [
+        {"host": "tracker-2.local", "port": 5561},
+        {"host": "tracker-3.local", "port": 5562}
+      ]
+    }
+  }
+  ```
+  
+  ## Servicios Internos
+  
+  - **TrackerService**: Servidor RPC principal (Tracker, Session, Register handlers)
+  - **ReplicationService**: Loop de replicación (cada 2s) + heartbeat (cada 5s)
+  - **CleanupService**: Limpieza de peers inactivos (cada 5 min) y eventos antiguos (retención 10 min)
+  
+  ## Handlers Distribuidos
+  
+  - `Event`: Gestión de event log con vector clocks (create_event, apply_event, get_last_event)
+  - `Replication`: Aplicación idempotente de eventos (peer_announce, peer_stopped, peer_completed, replicate_events, heartbeat, snapshot)
+  - `Tracker/Session/Register`: Handlers de control de cliente (sin cambios respecto a versión centralizada)
+  
+  ## Comandos de Build/Run
+  
+  - Build: `uv build --directory tracker`
+  - Instalación local: `pip install -e tracker`
+  - Ejecución: `uv --directory tracker/src run app.py`
+  - Docker: Ver `Dockerfile` para construcción de imagen

@@ -43,3 +43,20 @@ class PeerRepository(SQLAlchemyAsyncRepository[PeerTable]):
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def remove_inactive_peers(self, max_inactive_minutes: int = 30) -> int:
+        """Elimina peers inactivos y retorna el número de peers eliminados"""
+        cutoff_time = datetime.now(UTC) - timedelta(minutes=max_inactive_minutes)
+        
+        stmt = select(PeerTable).where(
+            (PeerTable.last_announce < cutoff_time) | (PeerTable.last_announce == None)
+        )
+        result = await self.session.execute(stmt)
+        inactive_peers = result.scalars().all()
+        
+        count = len(inactive_peers)
+        for peer in inactive_peers:
+            await self.delete(peer.id)
+        
+        await self.session.commit()
+        return count

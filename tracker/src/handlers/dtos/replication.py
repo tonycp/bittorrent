@@ -1,4 +1,7 @@
 from pydantic import StrictStr, StrictInt
+from typing import Dict, List
+
+from src.models import Peer, Torrent, EventLog
 
 
 PEER_ANNOUNCE_DATASET = {
@@ -18,4 +21,30 @@ PEER_STOPPED_DATASET = {
 
 PEER_COMPLETED_DATASET = {
     "peer_id": StrictStr,
+}
+
+# Para replicar lista de eventos incrementales
+REPLICATE_EVENTS_DATASET = {
+    "source_tracker_id": StrictStr,
+    "events": List[EventLog],
+}
+
+# Para heartbeat entre trackers
+HEARTBEAT_DATASET = {
+    "tracker_id": StrictStr,
+    "last_timestamp": StrictInt,
+    "event_count": StrictInt,
+}
+
+# Para snapshot inicial (tracker nuevo)
+REPLICATE_SNAPSHOT_DATASET = {
+    "source_tracker_id": StrictStr,
+    "vector_clock": Dict[StrictStr, StrictInt],
+    "torrents": List[Torrent],
+    "peers": List[Peer],
+}
+
+# Para solicitar snapshot
+REQUEST_SNAPSHOT_DATASET = {
+    "tracker_id": StrictStr,
 }

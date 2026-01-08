@@ -19,7 +19,7 @@ class HandlerContainer(DeclarativeContainer):
     config = Configuration()
     repo = DependenciesContainer()
     wiring_config = WiringConfiguration(
-        modules=[registry, session, tracker],
+        modules=[registry, session, tracker, event, replication],
         auto_wire=True,
     )
 
@@ -45,4 +45,5 @@ class HandlerContainer(DeclarativeContainer):
         replication.ReplicationHandler,
         torrent_repo=repo.torrent_repo,
         peer_repo=repo.peer_repo,
+        event_repo=repo.event_log_repo,
     )

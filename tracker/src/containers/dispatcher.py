@@ -17,5 +17,7 @@ class DispatcherContainer(DeclarativeContainer):
             handlers.tracker_hdl,
             handlers.register_hdl,
             handlers.session_hdl,
+            handlers.event_hdl,
+            handlers.replication_hdl,
         ],
     )

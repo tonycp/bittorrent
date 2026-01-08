@@ -19,36 +19,28 @@ from . import dtos
 class EventHandler(BaseHandler):
     def __init__(
         self,
-        tracker_id: str,
         event_repo: EventLogRepository = Provide[RepoContainer.event_log_repo],
     ):
         super().__init__()
-        self.tracker_id = tracker_id
         self.event_repo = event_repo
-        self._cached_vc: Dict[str, int] | None = None
+        self._cached_vc_by_tracker: Dict[str, Dict[str, int]] = {}
 
-    async def get_current_vc(self, copy: bool) -> Dict[str, int]:
-        """Obtiene VC actual desde último evento"""
-        if self._cached_vc is not None:
-            return dict(self._cached_vc)
+    async def get_current_vc(self, tracker_id: str) -> Dict[str, int]:
+        """Obtiene VC actual para un tracker concreto desde su último evento"""
+        if tracker_id in self._cached_vc_by_tracker:
+            return dict(self._cached_vc_by_tracker[tracker_id])
 
-        last_event = await self.event_repo.get_latest_by_tracker(self.tracker_id)
+        last_event = await self.event_repo.get_latest_by_tracker(tracker_id)
         if last_event:
-            self._cached_vc = dict(last_event.vector_clock)
+            vc = dict(last_event.vector_clock)
         else:
-            self._cached_vc = {self.tracker_id: 0}
+            vc = {tracker_id: 0}
 
-        return dict(self._cached_vc)
+        self._cached_vc_by_tracker[tracker_id] = vc
+        return dict(vc)
 
-    def _update_cached_vc(self, remote_vc: Dict[str, int]):
-        """Merge VC e incrementa local"""
-        if self._cached_vc is None:
-            self._cached_vc = {self.tracker_id: 0}
-
-        for k, v in remote_vc.items():
-            self._cached_vc[k] = max(self._cached_vc.get(k, 0), v)
-
-        self._cached_vc[self.tracker_id] = self._cached_vc.get(self.tracker_id, 0) + 1
+    def _cache_vc(self, tracker_id: str, vc: Dict[str, int]):
+        self._cached_vc_by_tracker[tracker_id] = dict(vc)
 
     def _should_apply(
         self, local_vc: Dict[str, int], remote_vc: Dict[str, int]
@@ -74,7 +66,7 @@ class EventHandler(BaseHandler):
         data: Dict[str, Any],
     ):
         """Crea evento local (genérico para cualquier operación)"""
-        current_vc = await self.get_current_vc()
+        current_vc = await self.get_current_vc(tracker_id)
         current_vc[tracker_id] = current_vc.get(tracker_id, 0) + 1
 
         event = EventLog(
@@ -86,7 +78,7 @@ class EventHandler(BaseHandler):
         )
 
         await self.event_repo.add(event)
-        self._cached_vc = current_vc
+        self._cache_vc(tracker_id, current_vc)
 
         # Retornar evento para replicación
         return EventSuccess(request=event.model_dump())
@@ -111,7 +103,7 @@ class EventHandler(BaseHandler):
         )
 
         # Validar orden causal
-        current_vc = await self.get_current_vc()
+        current_vc = await self.get_current_vc(tracker_id)
         if not self._should_apply(current_vc, event.vector_clock):
             raise ServiceError(
                 details={
@@ -121,8 +113,8 @@ class EventHandler(BaseHandler):
                 }
             )
 
-        # Actualizar VC local
-        self._update_cached_vc(event.vector_clock)
+        # Actualizar cache local con VC remoto aplicado
+        self._cache_vc(tracker_id, event.vector_clock)
 
         # Retornar evento para ReplicationHandler
         return EventSuccess(request=event.model_dump())
