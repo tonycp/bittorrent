@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  tracker-1:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-1
+    hostname: tracker-1
+    environment:
+      - SERVICES__TRACKER_ID=tracker-1
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+    ports:
+      - "5555:5555"  # RPC port
+      - "5556:5556"  # Cluster port
+    networks:
+      - torrent_net
+    volumes:
+      - ../tracker/src:/app/src
+      - tracker1-data:/app/data
+
+  tracker-2:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-2
+    hostname: tracker-2
+    environment:
+      - SERVICES__TRACKER_ID=tracker-2
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+    ports:
+      - "5557:5555"  # RPC port
+      - "5558:5556"  # Cluster port
+    networks:
+      - torrent_net
+    volumes:
+      - ../tracker/src:/app/src
+      - tracker2-data:/app/data
+    depends_on:
+      - tracker-1
+
+  tracker-3:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-3
+    hostname: tracker-3
+    environment:
+      - SERVICES__TRACKER_ID=tracker-3
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+    ports:
+      - "5559:5555"  # RPC port
+      - "5560:5556"  # Cluster port
+    networks:
+      - torrent_net
+    volumes:
+      - ../tracker/src:/app/src
+      - tracker3-data:/app/data
+    depends_on:
+      - tracker-1
+      - tracker-2
+
+networks:
+  torrent_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.17.0.0/16
+
+volumes:
+  tracker1-data:
+  tracker2-data:
+  tracker3-data:

@@ -138,3 +138,12 @@ class CacheManager(Generic[T]):
     def reset_stats(self) -> None:
         """Reinicia estadísticas."""
         self._stats = {"hits": 0, "misses": 0, "sets": 0}
+    
+    def items(self):
+        """Itera sobre pares (key, value) de entradas no expiradas."""
+        for key, entry in list(self._store.items()):
+            if not entry.is_expired():
+                yield key, entry.value
+            else:
+                # Limpieza lazy: eliminar expiradas durante iteración
+                del self._store[key]

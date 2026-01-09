@@ -7,9 +7,9 @@
             "description": "selecciona la direccion",
             "options": [
                 "client",
-                "Bit",
+                "tracker",
             ],
-            "default": "Bit"
+            "default": "tracker"
         },
         {
             "id": "display-ip",

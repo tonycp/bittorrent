@@ -30,13 +30,6 @@ REPLICATE_EVENTS_DATASET = {
     "events": List[EventLog],
 }
 
-# Para heartbeat entre trackers
-HEARTBEAT_DATASET = {
-    "tracker_id": StrictStr,
-    "last_timestamp": StrictInt,
-    "event_count": StrictInt,
-}
-
 # Para snapshot inicial (tracker nuevo)
 REPLICATE_SNAPSHOT_DATASET = {
     "source_tracker_id": StrictStr,
@@ -48,4 +41,11 @@ REPLICATE_SNAPSHOT_DATASET = {
 # Para solicitar snapshot
 REQUEST_SNAPSHOT_DATASET = {
     "tracker_id": StrictStr,
+}
+
+# Para heartbeat de trackers
+REPLICATION_HEARTBEAT_DATASET = {
+    "tracker_id": StrictStr,
+    "last_timestamp": StrictInt,
+    "event_count": StrictInt,
 }

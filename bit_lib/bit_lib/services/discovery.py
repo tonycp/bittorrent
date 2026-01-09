@@ -84,7 +84,14 @@ class PingSweepDiscovery(DiscoveryService):
             return self._cache[key].alive
 
         try:
-            request = Request()
+            # Build a minimal valid request; remote may return an error response,
+            # but that's sufficient to confirm liveness.
+            request = Request(
+                controller="Discovery",
+                command="ping",
+                func="ping",
+                args=None,
+            )
             response = await self.request(
                 host,
                 port,

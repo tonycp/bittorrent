@@ -31,6 +31,23 @@ class CleanupService(UniqueService, ClientService):
         self._cleanup_task: asyncio.Task | None = None
         self._running = False
 
+    # ==================== MessageService Abstract Methods ====================
+
+    async def _handle_binary(self, protocol, meta, data: bytes):
+        """Handle binary data transfer"""
+        logger.warning("Binary data received but not implemented yet")
+
+    async def _on_connect(self, protocol):
+        """Called when a new connection is established"""
+        logger.debug("New connection established")
+
+    async def _on_disconnect(self, protocol, exc):
+        """Called when a connection is closed"""
+        if exc:
+            logger.debug(f"Connection closed with error: {exc}")
+        else:
+            logger.debug("Connection closed cleanly")
+
     async def _dispatch_request(self, hdl_key: str, data: Data, msg_id: str):
         """Redirige requests externos al MaintenanceHandler (para RPC entrante)"""
         return await self.maintenance_handler.dispatch(hdl_key, data, msg_id)
@@ -56,6 +73,22 @@ class CleanupService(UniqueService, ClientService):
                 pass
 
         logger.info("Cleanup loop stopped")
+
+    async def run(self):
+        """Arranca loop de limpieza y servidor RPC asociado."""
+        if self._running:
+            return
+
+        await self.start_cleanup_loop()
+        try:
+            await super().run()
+        finally:
+            self._running = False
+
+    async def stop(self):
+        """Detiene loop de limpieza y servidor RPC asociado."""
+        await self.stop_cleanup_loop()
+        await super().stop()
 
     async def _cleanup_loop(self):
         """Loop principal que ejecuta limpieza periódicamente"""

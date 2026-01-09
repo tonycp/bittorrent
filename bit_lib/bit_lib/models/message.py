@@ -1,6 +1,6 @@
 from bit_lib.const import c_proto as cp
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import (
     Literal,
     Optional,
@@ -18,7 +18,9 @@ def _get_msg_uuid() -> str:
 
 
 class BaseMessage(BaseModel):
-    type: str = Field(discriminator=True)
+    model_config = ConfigDict(discriminator="type")
+
+    type: str
 
     version: str = cp.PROTOCOL_VERSION
     msg_id: str = Field(default_factory=_get_msg_uuid)

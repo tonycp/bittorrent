@@ -12,3 +12,4 @@ class Tracker(Entity):
     port: int = Field(..., ge=1024, le=65535, description="Puerto del tracker")
     status: str = Field(default="online", description="Estado: online | offline | degraded")
     vector_clock: VectorClock = Field(default_factory=VectorClock, description="Vector clock para causalidad")
+    query_count: int = Field(default=0, ge=0, description="Contador de queries recibidas de clientes")

@@ -20,10 +20,10 @@ Factory = providers.Factory
 class HandlerContainer(DeclarativeContainer):
     config = Configuration()
     repo = DependenciesContainer()
-    wiring_config = WiringConfiguration(
-        modules=[registry, session, bit, tracker, maintenance, event, replication],
-        auto_wire=True,
-    )
+    # wiring_config = WiringConfiguration(
+    #     modules=[registry, session, bit, tracker, maintenance, event, replication],
+    #     auto_wire=True,
+    # )
 
     bit_hdl = Factory(
         bit.BitHandler,

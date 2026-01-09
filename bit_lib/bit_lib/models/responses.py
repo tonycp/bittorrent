@@ -12,6 +12,7 @@ class SuccessResponse(BaseModel):
 
 class DataResponse(SuccessResponse):
     """Respuesta genérica con datos arbitrarios"""
+
     data: Dict[str, Any] = Field(description="Datos de la respuesta.")
 
 

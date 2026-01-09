@@ -15,10 +15,10 @@ class SessionResource(Resource):
 
 class GatewayContainer(DeclarativeContainer):
     config = Configuration()
-    wiring_config = WiringConfiguration(
-        modules=[database],
-        auto_wire=True,
-    )
+    # wiring_config = WiringConfiguration(
+    #     modules=[database],
+    #     auto_wire=True,
+    # )
 
     tracker_db = Singleton(
         database.Database,

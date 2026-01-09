@@ -1,7 +1,12 @@
-from typing import Any, Callable, Awaitable, Dict, Self, Tuple, Type, TypeAlias, Union
+from __future__ import annotations
+
+from typing import Any, Callable, Awaitable, Dict, Self, Tuple, Type, TypeAlias, Union, TYPE_CHECKING
 from pydantic import BaseModel, TypeAdapter
 
-from .responses import SuccessResponse
+if TYPE_CHECKING:
+	from .responses import SuccessResponse
+else:
+	SuccessResponse = object
 
 Validated: TypeAlias = Union[TypeAdapter, Any]
 ValidateType: TypeAlias = Union[TypeAdapter, BaseModel]

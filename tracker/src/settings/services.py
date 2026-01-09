@@ -24,9 +24,28 @@ class CleanupSettings(BaseModel):
     event_retention_minutes: int = 10  # retención de eventos tras replicar (10 min)
 
 
+class ClusterSettings(BaseModel):
+    host: str = "0.0.0.0"
+    port: int = 5556  # Puerto dedicado para comunicación cluster
+    sync_interval: int = 10  # segundos entre ciclos de discovery
+    heartbeat_interval: int = 5  # segundos entre heartbeats
+    liveness_timeout: int = 15  # segundos sin respuesta para marcar ausente
+    purge_timeout: int = 60  # segundos para eliminar definitivamente
+    cleanup_interval: int = 60  # segundos entre normalizaciones (solo líder)
+    service_name: str = "tracker"  # Nombre del servicio Docker para discovery
+    heartbeat_fail_threshold: int = 2  # Fallos consecutivos para disparar elección
+    election_semaphore_size: int = 10  # Concurrencia máxima en consultas de elección
+    discovery_timeout: float = 2.0  # Timeout para ping-sweep en discovery
+    discovery_ping_subnet: str = "172.17.0.0/16"  # Subnet para ping-sweep fallback
+    discovery_ping_max_workers: int = 10  # Workers máximos para ping-sweep
+    rpc_timeout: float = 5.0  # Timeout para requests RPC
+    min_cluster_size: int = 1  # Mínimo de trackers para considerar cluster estable
+
+
 class ServiceSettings(BaseModel):
     tracker: SocketSettings = SocketSettings()
     tracker_id: str = "tracker-1"
     neighbors: list[NeighborSettings] = []
     replication: ReplicationSettings = ReplicationSettings()
     cleanup: CleanupSettings = CleanupSettings()
+    cluster: ClusterSettings = ClusterSettings()

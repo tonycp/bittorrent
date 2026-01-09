@@ -117,7 +117,7 @@ class ReplicationHandler(BaseHandler):
         )
 
     # hdl_key: "Replication:create:heartbeat"
-    @create(dtos.HEARTBEAT_DATASET)
+    @create(dtos.REPLICATION_HEARTBEAT_DATASET)
     async def heartbeat(
         self,
         tracker_id: str,

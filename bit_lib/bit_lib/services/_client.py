@@ -38,13 +38,14 @@ class ClientService(BitService, ABC):
         port: int,
         request: Request,
         timeout: float = 5.0,
-    ) -> Optional[Response]:
-        fut = self.loop.create_future()
+    ) -> Response:
+        fut: Future[Response] = self.loop.create_future()
         protocol = await self.connect(host, port)
-        self._pending_by_proto[protocol][request.msg_id] = fut
+        self._pending_by_proto.setdefault(protocol, {})[request.msg_id] = fut
 
         protocol.send_message(request)
-        return await asyncio.wait_for(fut, timeout=timeout)
+        a = await asyncio.wait_for(fut, timeout=timeout)
+        return a
 
     def get_future(self, proto: MProtocol, resp: Response) -> Optional[Future]:
         if resp.reply_to:

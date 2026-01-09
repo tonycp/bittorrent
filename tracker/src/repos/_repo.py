@@ -12,10 +12,10 @@ Factory = providers.Factory
 class RepoContainer(DeclarativeContainer):
     config = Configuration()
     gateways = DependenciesContainer()
-    wiring_config = WiringConfiguration(
-        modules=[peer, torrent],
-        auto_wire=True,
-    )
+    # wiring_config = WiringConfiguration(
+    #     modules=[peer, torrent],
+    #     auto_wire=True,
+    # )
 
     peer_repo = Factory(
         peer.PeerRepository,

@@ -29,7 +29,6 @@ class AppContainer(DeclarativeContainer):
 
     repositories = Container(
         RepoContainer,
-        config=config.repositories,
         gateways=gateways,
     )
 

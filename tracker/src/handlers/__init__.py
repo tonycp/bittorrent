@@ -6,3 +6,4 @@ from .registry import RegisterHandler as RegisterHandler
 from .session import SessionHandler as SessionHandler
 from .replication import ReplicationHandler as ReplicationHandler
 from .event import EventHandler as EventHandler
+from .cluster import ClusterHandler as ClusterHandler
