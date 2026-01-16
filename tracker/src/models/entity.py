@@ -10,10 +10,10 @@ EntityID: TypeAlias = UUID
 
 class Entity(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: EntityID
-    version: int
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+    id: Optional[EntityID] = None
+    version: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     @field_validator("created_at", "updated_at", mode="before")
     @classmethod

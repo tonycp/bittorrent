@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from bit_lib.proto.protocol import MProtocol
+from bit_lib.proto.protocol import MProtocol, MessageProtocol
 from bit_lib.models import (
     MessageUnion,
     Error,
@@ -33,7 +33,7 @@ class MessageService(ABC):
 
     def _create_protocol_factory(self):
         def protocol_factory():
-            return MProtocol(
+            return MessageProtocol(
                 self._handle_message,
                 self._handle_binary,
                 self._on_connect,

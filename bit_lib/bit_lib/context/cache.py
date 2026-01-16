@@ -74,6 +74,31 @@ class CacheManager(Generic[T]):
             self._stats["sets"] += 1
             logger.debug(f"{self._name}: set {key} (ttl={ttl_to_use}s)")
     
+    async def touch(self, key: str) -> bool:
+        """
+        Actualiza el timestamp de una clave existente sin cambiar su valor.
+        Útil para refrescar entries que siguen siendo válidas.
+        
+        Args:
+            key: clave a refrescar
+        
+        Returns:
+            True si la clave existía y fue actualizada, False si no existía
+        """
+        async with self._lock:
+            if key not in self._store:
+                return False
+            
+            entry = self._store[key]
+            if entry.is_expired():
+                del self._store[key]
+                return False
+            
+            # Refrescar timestamp sin cambiar el valor
+            entry.created_at = time.time()
+            logger.debug(f"{self._name}: touched {key} (ttl={entry.ttl}s)")
+            return True
+    
     async def get_or_fetch(
         self,
         key: str,

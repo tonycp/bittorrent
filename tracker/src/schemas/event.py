@@ -12,3 +12,4 @@ class EventTable(EntityTable):
     operation: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     timestamp: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    replicated_to: Mapped[dict] = mapped_column(JSON, nullable=False, default={})

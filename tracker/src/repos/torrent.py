@@ -1,9 +1,13 @@
 from advanced_alchemy.repository import SQLAlchemyAsyncRepository
 
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
+from sqlalchemy import select, insert, delete, and_
 
-from src.schemas import TorrentTable, PeerTable
+from src.schemas import TorrentTable, PeerTable, torrent_peers
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TorrentRepository(SQLAlchemyAsyncRepository[TorrentTable]):
@@ -19,29 +23,109 @@ class TorrentRepository(SQLAlchemyAsyncRepository[TorrentTable]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def add_peer_to_torrent(self, info_hash: str, peer: PeerTable) -> bool:
-        """Agrega un peer a un torrent"""
+    async def is_peer_in_torrent(self, info_hash: str, peer_identifier: str) -> bool:
+        """Verifica si un peer está asociado a un torrent"""
+
         torrent = await self.get(info_hash)
         if not torrent:
             return False
 
-        if peer not in torrent.peers:
-            torrent.peers.append(peer)
-            await self.update(torrent)
-        return True
-
-    async def remove_peer_from_torrent(self, info_hash: str, peer_id: str) -> bool:
-        """Remueve un peer de un torrent"""
-        torrent = await self.get(info_hash)
-        if not torrent:
+        peer_result = await self.session.execute(
+            select(PeerTable).where(PeerTable.peer_identifier == peer_identifier)
+        )
+        peer_obj = peer_result.scalar_one_or_none()
+        if not peer_obj:
             return False
 
-        peer_to_remove = next((p for p in torrent.peers if p.id == peer_id), None)
-        if peer_to_remove:
-            torrent.peers.remove(peer_to_remove)
-            await self.update(torrent)
+        # Verificar la relación en la tabla junction
+        stmt = select(torrent_peers).where(
+            and_(
+                torrent_peers.c.torrent_id == torrent.id,
+                torrent_peers.c.peer_id == peer_obj.id,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.first() is not None
+
+    async def add_peer_to_torrent(self, info_hash: str, peer_identifier: str) -> bool:
+        """Agrega un peer a un torrent usando su peer_identifier"""
+        from src.schemas.torrent import torrent_peers
+        import logging
+        from sqlalchemy import and_
+
+        logger = logging.getLogger(__name__)
+
+        # Obtener torrent y peer
+        torrent = await self.get(info_hash)
+        if not torrent:
+            logger.error(f"Torrent {info_hash} not found")
+            return False
+
+        peer_result = await self.session.execute(
+            select(PeerTable).where(PeerTable.peer_identifier == peer_identifier)
+        )
+        peer = peer_result.scalar_one_or_none()
+        if not peer:
+            logger.error(f"Peer {peer_identifier} not found")
+            return False
+
+        # Verificar si ya existe la relación
+        check_stmt = select(torrent_peers).where(
+            and_(
+                torrent_peers.c.torrent_id == torrent.id,
+                torrent_peers.c.peer_id == peer.id,
+            )
+        )
+        existing = await self.session.execute(check_stmt)
+        if existing.first():
+            logger.info(f"Relationship already exists: torrent_id={torrent.id}, peer_id={peer.id}")
             return True
-        return False
+
+        logger.info(
+            f"Inserting relationship: torrent_id={torrent.id}, peer_id={peer.id}"
+        )
+
+        # Insertar relación directamente en la tabla junction
+        stmt = insert(torrent_peers).values(
+            torrent_id=torrent.id,
+            peer_id=peer.id,
+        )
+
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+
+        logger.info(f"Inserted: {result.rowcount} rows")
+        return result.rowcount > 0
+
+    async def remove_peer_from_torrent(
+        self, info_hash: str, peer_identifier: str
+    ) -> bool:
+        """Remueve un peer de un torrent"""
+        from src.schemas.torrent import torrent_peers
+
+        # Obtener el torrent
+        torrent = await self.get(info_hash)
+        if not torrent:
+            return False
+
+        # Obtener el peer por su identificador
+        peer_result = await self.session.execute(
+            select(PeerTable).where(PeerTable.peer_identifier == peer_identifier)
+        )
+        peer = peer_result.scalar_one_or_none()
+        if not peer:
+            return False
+
+        # Eliminar la relación
+        stmt = delete(torrent_peers).where(
+            and_(
+                torrent_peers.c.torrent_id == torrent.id,
+                torrent_peers.c.peer_id == peer.id,
+            )
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount > 0
 
     async def get_torrent_stats(self, info_hash: str) -> dict:
         """Obtiene estadísticas del torrent"""
@@ -73,3 +157,24 @@ class TorrentRepository(SQLAlchemyAsyncRepository[TorrentTable]):
         
         await self.session.commit()
         return count
+
+    async def get_active_peers(self, info_hash: str, exclude_peer_id: str = None) -> list[PeerTable]:
+        """Obtiene los peers activos de un torrent, opcionalmente excluyendo uno"""
+        from datetime import datetime, timezone, timedelta
+        
+        torrent = await self.get(info_hash)
+        if not torrent:
+            return []
+
+        # Filtrar peers activos (que hayan hecho announce en los últimos 1 hora)
+        now = datetime.now(timezone.utc)
+        hour_ago = now - timedelta(hours=1)
+
+        active_peers = [
+            p
+            for p in torrent.peers
+            if p.last_announce and p.last_announce > hour_ago
+            and (not exclude_peer_id or p.peer_identifier != exclude_peer_id)
+        ]
+
+        return active_peers

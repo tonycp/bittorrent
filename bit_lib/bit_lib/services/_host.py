@@ -7,8 +7,8 @@ import asyncio
 
 
 class HostService(BitService, ABC):
-    def __init__(self, host: str, port: int):
-        BitService.__init__(self)
+    def __init__(self, host: str, port: int, **kwargs):
+        super().__init__(**kwargs)
 
         self.host = host
         self.port = port

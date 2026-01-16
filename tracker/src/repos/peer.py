@@ -9,13 +9,13 @@ from src.schemas import PeerTable, TorrentTable
 class PeerRepository(SQLAlchemyAsyncRepository[PeerTable]):
     model_type = PeerTable
 
-    async def get(self, peer_id: str) -> PeerTable | None:
-        """Obtiene peer por peer_id"""
-        return await self.get_one_or_none(peer_id=peer_id)
+    async def get_by_identifier(self, peer_identifier: str) -> PeerTable | None:
+        """Obtiene peer por peer_identifier (client-provided peer ID)"""
+        return await self.get_one_or_none(peer_identifier=peer_identifier)
 
     async def update_peer_activity(self, peer_id: str, **updates) -> PeerTable | None:
         """Actualiza la actividad de un peer"""
-        peer = await self.get(peer_id)
+        peer = await self.get_by_identifier(peer_id)
         if not peer:
             return None
 
@@ -60,3 +60,56 @@ class PeerRepository(SQLAlchemyAsyncRepository[PeerTable]):
         
         await self.session.commit()
         return count
+
+    async def upsert(
+        self,
+        peer_id: str,
+        ip: str,
+        port: int,
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int = 0,
+        is_seed: bool = False,
+    ) -> PeerTable:
+        """
+        Crea o actualiza un peer idempotentemente.
+        Si el peer existe, actualiza sus datos.
+        Si no existe, lo crea.
+        """
+        peer = await self.get_by_identifier(peer_id)
+        if peer:
+            # Actualizar peer existente
+            peer.ip = ip
+            peer.port = port
+            peer.uploaded = uploaded
+            peer.downloaded = downloaded
+            peer.left = left
+            peer.is_seed = is_seed
+            peer.last_announce = datetime.now(UTC)
+            return await self.update(peer)
+        else:
+            # Crear nuevo peer
+            new_peer = PeerTable(
+                peer_identifier=peer_id,
+                ip=ip,
+                port=port,
+                uploaded=uploaded,
+                downloaded=downloaded,
+                left=left,
+                is_seed=is_seed,
+                last_announce=datetime.now(UTC),
+            )
+            return await self.add(new_peer)
+
+    async def mark_seed(self, peer_id: str, is_seed: bool) -> PeerTable | None:
+        """
+        Marca un peer como seeder o leecher.
+        Retorna el peer actualizado, o None si no existe.
+        """
+        peer = await self.get_by_identifier(peer_id)
+        if not peer:
+            return None
+        
+        peer.is_seed = is_seed
+        peer.last_announce = datetime.now(UTC)
+        return await self.update(peer)

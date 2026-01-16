@@ -40,7 +40,8 @@ class ServiceContainer(DeclarativeContainer):
         query_count=0,
         vector_clock=VectorClock(),
         is_coordinator=True,  # Se autoasigna al inicio
-        coordinator_id=config.tracker_id,
+        coordinator_id=config.tracker.host,  # IP del coordinador inicial (es uno mismo)
+        coordinator_tracker_id=config.tracker_id,  # tracker_id del coordinador
     )
 
     # ClusterService con ClusterState y ClusterSettings
@@ -86,6 +87,7 @@ class ServiceContainer(DeclarativeContainer):
         tracker_id=config.tracker_id,
         cluster_service=cluster_service,
         settings=replication_settings,
+        event_handler=handlers.event_hdl,
     )
     
     cleanup_service = Factory(

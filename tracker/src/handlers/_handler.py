@@ -15,6 +15,7 @@ WiringConfiguration = containers.WiringConfiguration
 DependenciesContainer = providers.DependenciesContainer
 Configuration = providers.Configuration
 Factory = providers.Factory
+Singleton = providers.Singleton
 
 
 class HandlerContainer(DeclarativeContainer):
@@ -25,35 +26,35 @@ class HandlerContainer(DeclarativeContainer):
     #     auto_wire=True,
     # )
 
-    bit_hdl = Factory(
+    bit_hdl = Singleton(
         bit.BitHandler,
         torrent_repo=repo.torrent_repo,
         peer_repo=repo.peer_repo,
     )
-    tracker_hdl = Factory(
+    tracker_hdl = Singleton(
         tracker.TrackerHandler,
         tracker_repo=repo.tracker_repo,
     )
-    maintenance_hdl = Factory(
+    maintenance_hdl = Singleton(
         maintenance.MaintenanceHandler,
         peer_repo=repo.peer_repo,
         torrent_repo=repo.torrent_repo,
         event_repo=repo.event_log_repo,
     )
-    register_hdl = Factory(
+    register_hdl = Singleton(
         registry.RegisterHandler,
         torrent_repo=repo.torrent_repo,
     )
-    session_hdl = Factory(
+    session_hdl = Singleton(
         session.SessionHandler,
         torrent_repo=repo.torrent_repo,
         peer_repo=repo.peer_repo,
     )
-    event_hdl = Factory(
+    event_hdl = Singleton(
         event.EventHandler,
-        event_repo=repo.event_repo,
+        event_repo=repo.event_log_repo,
     )
-    replication_hdl = Factory(
+    replication_hdl = Singleton(
         replication.ReplicationHandler,
         torrent_repo=repo.torrent_repo,
         peer_repo=repo.peer_repo,

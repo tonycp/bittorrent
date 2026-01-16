@@ -1,4 +1,3 @@
-from bit_lib.context import save_config_to_ini
 from src.const.c_env import DEFAULT_TRK_HOST
 
 from src.containers import AppContainer
@@ -10,7 +9,7 @@ import logging
 
 # Configuración básica de logs para ver flujos en consola
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
@@ -37,7 +36,12 @@ def main():
 
 async def run_tracker(container):
     """Función async para inicializar DB y arrancar el tracker"""
-    container.gateways.create_db()
+    try:
+        db = container.gateways.tracker_db()
+        await db.create_database_async()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.warning(f"Database init failed: {e}")
 
     # Obtener service (puede ser un Provider que devuelve Future/instancia)
     service_provider = container.services.tracker_service

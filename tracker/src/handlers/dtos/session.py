@@ -5,6 +5,7 @@ from pydantic import (
 
 HANDSHAKE_DATASET = {
     "peer_id": StrictStr,
+    "info_hash": StrictStr,
     "protocol_version": StrictStr,
 }
 

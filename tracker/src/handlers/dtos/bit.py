@@ -2,6 +2,7 @@ from pydantic import (
     StrictStr,
     StrictInt,
 )
+from typing import Optional
 
 ANNOUNCE_DATASET = {
     "info_hash": StrictStr,
@@ -9,7 +10,7 @@ ANNOUNCE_DATASET = {
     "ip": StrictStr,
     "port": StrictInt,
     "left": StrictInt,
-    "event": StrictStr,
+    "event": Optional[StrictStr],
 }
 
 PEER_LIST_DATASET = {

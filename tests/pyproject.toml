@@ -1,0 +1,16 @@
+[project]
+name = "tests"
+version = "0.1.0"
+description = "Integration tests for BitTorrent replication"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.12.15",
+    "bit-lib>=0.1.0",
+]
+
+[tool.uv.sources]
+bit-lib = { path = "../bit_lib", editable = true }
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

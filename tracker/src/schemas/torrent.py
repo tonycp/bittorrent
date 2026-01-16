@@ -32,6 +32,7 @@ class TorrentTable(EntityTable):
 
     size: Mapped[int]
     chunks: Mapped[int]
+    piece_length: Mapped[int]
 
     peers: Mapped[List[PeerTable]] = relationship(
         secondary=torrent_peers,
@@ -42,6 +43,7 @@ class TorrentTable(EntityTable):
 
 class PeerTable(EntityTable):
     __tablename__ = "peers"
+    peer_identifier: Mapped[str] = mapped_column(unique=True)  # Client-provided peer identifier (e.g., "TEST-PEER-01")
     ip: Mapped[str]
     port: Mapped[int]
 

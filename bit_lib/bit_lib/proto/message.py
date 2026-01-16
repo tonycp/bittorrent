@@ -9,8 +9,13 @@ from bit_lib.models import (
     MessageUnion,
 )
 from bit_lib.models.message import MetaData
+from pydantic import TypeAdapter
 
-DSerial: TypeAlias = "DataSerialize"
+# Runtime alias to the concrete serializer class
+DSerial = None  # will be set after class definition
+
+# TypeAdapter for MessageUnion to enable validation of discriminated union
+_message_adapter = TypeAdapter(MessageUnion)
 
 
 class DataSerialize:
@@ -38,7 +43,7 @@ class DataSerialize:
     @staticmethod
     def decode_message(data: bytes) -> MessageUnion:
         json_str = data.decode(cp.ENCODING)
-        return MessageUnion.model_validate_json(json_str)
+        return _message_adapter.validate_json(json_str)
 
     @staticmethod
     def encode_data(metadata: MetaData, binary_data: bytes) -> bytes:
@@ -50,3 +55,7 @@ class DataSerialize:
         size, chunk = DSerial.split_head(data)
         metadata = DSerial.decode_message(chunk[:size])
         return metadata, chunk[size:]
+
+
+# Bind DSerial to the concrete class for runtime use
+DSerial = DataSerialize

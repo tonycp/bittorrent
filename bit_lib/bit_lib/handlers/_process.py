@@ -3,8 +3,8 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from typing import (
     Callable,
     Dict,
-    List,
     Set,
+    Any,
 )
 from bit_lib.models import (
     Data,
@@ -29,7 +29,7 @@ def _get_names_error(func, message: str, error: str, missings: Set[str]):
 
 def _names_validate(
     func: Callable,
-    names: List[str],
+    names: set[str],
     keys: Set[str],
 ):
     missings = names.difference(keys)
@@ -50,11 +50,16 @@ def _models_validate(func_name, data: Data, dataset: DataSet) -> Dict[str, Valid
     def _validate(item):
         key, value = item
         try:
+            # Pasar sin validar cuando el tipo declarado es Any
+            if dataset[key] is Any:
+                return key, value
             if dataset[key] is BaseModel:
                 return key, dataset[key].model_validate(value)
-            else:
-                adapter = TypeAdapter(dataset[key])
-                return key, adapter.validate_python(value)
+            # Si el valor es None y el tipo es Optional, permitirlo directamente
+            if value is None:
+                return key, value
+            adapter = TypeAdapter(dataset[key])
+            return key, adapter.validate_python(value)
         except ValidationError as e:
             raise ValueError(f"Error validating {key} for handler {func_name}: {e}")
 

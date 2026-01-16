@@ -4,4 +4,6 @@ RUN pip install uv
 
 RUN uv init --lib bit_lib
 COPY .python-version pyproject.toml uv.lock /bit_lib/
-RUN uv --project app sync --no-managed-python
+COPY bit_lib /bit_lib/bit_lib
+
+RUN uv --directory bit_lib sync --no-managed-python

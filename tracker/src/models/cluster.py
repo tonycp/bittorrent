@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from dataclass_mapper import mapper
 from pydantic import BaseModel, Field
 from bit_lib.context import CacheManager, VectorClock
-
-from .tracker import Tracker
 
 
 class TrackerState(BaseModel):
@@ -15,12 +14,14 @@ class TrackerState(BaseModel):
     vector_clock: VectorClock = Field(default_factory=VectorClock)
     is_coordinator: bool = False
     query_count: int = 0
+    coordinator_id: str | None = None  # IP del coordinador conocido
+    coordinator_tracker_id: str | None = None  # tracker_id del coordinador
 
 
+@mapper(TrackerState)
 class ClusterState(TrackerState):
     """Estado del cluster local con cache de otros trackers"""
 
-    coordinator_id: str | None = None
     cache: CacheManager[TrackerState] | None = None
 
     class Config:

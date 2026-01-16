@@ -12,6 +12,9 @@ from dependency_injector.wiring import Closing, Provide
 from sqlalchemy import text
 
 from . import dtos
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @controller("Bit")
@@ -24,6 +27,7 @@ class BitHandler(BaseHandler):
         super().__init__()
         self.torrent_repo = torrent_repo
         self.peer_repo = peer_repo
+        self.request_handler = None  # Se asigna desde TrackerService
 
     @create(dtos.ANNOUNCE_DATASET)
     async def announce(
@@ -33,49 +37,117 @@ class BitHandler(BaseHandler):
         ip: str,
         port: int,
         left: int,
-        event: str = None,  # Agregado para manejar eventos BT
+        event: str = None,
     ):
-        # Buscar el torrent
-        torrent = await self.torrent_repo.get(info_hash)
-        if not torrent:
-            raise ValueError("Torrent no encontrado")
+        try:
+            now = datetime.now(timezone.utc)
 
-        # Buscar el peer
-        peer = await self.peer_repo.get(peer_id)
-        now = datetime.now(timezone.utc)
+            torrent = await self.torrent_repo.get(info_hash)
+            if not torrent:
+                raise ValueError("Torrent no encontrado")
 
-        if not peer:
-            peer = PeerTable(
-                peer_id=peer_id,
-                ip=ip,
-                port=port,
-                left=left,
-                last_announce=now,
-                is_seed=(event == "completed"),
-            )
-            await self.peer_repo.add(peer)
-            await self.torrent_repo.add_peer_to_torrent(torrent.info_hash, peer)
-        else:
-            peer.ip = ip
-            peer.port = port
-            peer.left = left
-            peer.last_announce = now
-            if event == "completed":
-                peer.is_seed = True
+            peer = await self.peer_repo.get_by_identifier(peer_id)
+            is_seeder = left == 0 or event == "completed"
+
+            if not peer:
+                peer = PeerTable(
+                    peer_identifier=peer_id,
+                    ip=ip,
+                    port=port,
+                    left=left,
+                    last_announce=now,
+                    is_seed=is_seeder,
+                )
+                await self.peer_repo.add(peer)
+                # Solo vinculamos si no es un evento de parada
+                if event != "stopped":
+                    await self.torrent_repo.add_peer_to_torrent(info_hash, peer_id)
+            else:
+                # Actualizar datos del peer existente
+                peer.ip, peer.port, peer.left = ip, port, left
+                peer.last_announce = now
+                peer.is_seed = is_seeder
+                await self.peer_repo.update(peer)
+
             if event == "stopped":
-                if peer in torrent.peers:
-                    torrent.peers.remove(peer)  # O marcar el peer para limpieza
+                await self.torrent_repo.remove_peer_from_torrent(info_hash, peer_id)
+                
+                # Generar evento para replicación
+                await self._create_event(
+                    operation="peer_stopped",
+                    data={
+                        "torrent_hash": info_hash,
+                        "peer_id": peer_id,
+                    }
+                )
+                
+                # Si se detiene, devolvemos una lista vacía o mínima rápidamente
+                return DataResponse(data={"interval": 1800, "peers": []})
 
-        # Listar peers activos (limpia los inactivos: ejemplo, en los últimos 2 x interval)
-        interval = 1800
-        active_peers = [{"ip": p.ip, "port": p.port} for p in torrent.peers]
+            if event == "started" or not event:
+                # Asegurar que esté vinculado (por si el registro se perdió o es nuevo)
+                await self.torrent_repo.add_peer_to_torrent(info_hash, peer_id)
+                
+                # Generar evento para replicación
+                await self._create_event(
+                    operation="peer_announce",
+                    data={
+                        "torrent_hash": info_hash,
+                        "peer_id": peer_id,
+                        "ip": ip,
+                        "port": port,
+                        "left": left,
+                        "uploaded": 0,
+                        "downloaded": 0,
+                    }
+                )
 
-        return DataResponse(
-            data={
-                "interval": interval,
-                "peers": active_peers,
-            }
-        )
+            # IMPORTANTE: Filtrar para no enviarse a sí mismo (peer_id)
+            # Y opcionalmente limitar la cantidad (ej. top 50)
+            peers_list = await self.torrent_repo.get_active_peers(
+                info_hash, exclude_peer_id=peer_id
+            )
+
+            active_peers = [{"ip": p.ip, "port": p.port} for p in peers_list]
+
+            return DataResponse(
+                data={
+                    "interval": 1800,  # 30 min estándar
+                    "peers": active_peers,
+                }
+            )
+        except Exception as e:
+            logger.error(f"Announce error: {e}", exc_info=True)
+            raise
+
+    async def _create_event(self, operation: str, data: dict):
+        """Helper para crear eventos que se replicarán entre trackers via callback"""
+        import os
+        from bit_lib.models import Request
+        
+        if not self.request_handler:
+            logger.warning("No request_handler available, skipping event creation")
+            return
+        
+        tracker_id = os.getenv("TRACKER_ID", "tracker-unknown")
+        
+        try:
+            # Crear request para EventHandler
+            req = Request(
+                controller="Event",
+                command="create",
+                func="create_event",
+                args={
+                    "tracker_id": tracker_id,
+                    "operation": operation,
+                    "data": data,
+                },
+            )
+            # Llamar directamente al handler del servidor principal
+            await self.request_handler(req)
+            logger.debug(f"[{tracker_id}] Evento creado: {operation}")
+        except Exception as e:
+            logger.warning(f"[{tracker_id}] Error creando evento: {e}")
 
     @get(dtos.PEER_LIST_DATASET)
     async def peer_list(
@@ -86,12 +158,34 @@ class BitHandler(BaseHandler):
         if not torrent:
             raise ValueError("Torrent no encontrado")
 
-        active_peers = [
-            {"peer_id": p.id, "ip": p.ip, "port": p.port} for p in torrent.peers
-        ]
+        now = datetime.now(timezone.utc)
+        interval = 1800  # 30 minutos
+
+        # 2. Filtrar solo los que están realmente activos (Grace period de 2x intervalo)
+        active_peers = []
+        for p in torrent.peers:
+            is_active = (
+                p.last_announce
+                and (now - p.last_announce).total_seconds() < 2 * interval
+            )
+
+            if is_active:
+                active_peers.append(
+                    {
+                        "peer_id": p.peer_identifier,  # El ID de 20 bytes de BitTorrent
+                        "ip": p.ip,
+                        "port": p.port,
+                        "is_seed": p.is_seed,
+                        "last_seen": p.last_announce.isoformat(),
+                    }
+                )
 
         return DataResponse(
-            data={"info_hash": info_hash, "peers": active_peers}
+            data={
+                "info_hash": info_hash,
+                "total_active": len(active_peers),
+                "peers": active_peers,
+            }
         )
 
     @get(dtos.GET_PEERS_DATASET)
@@ -104,18 +198,26 @@ class BitHandler(BaseHandler):
             raise ValueError("Torrent no encontrado")
 
         now = datetime.now(timezone.utc)
-        interval = 1800
+        # Definimos un margen de gracia para considerar a un peer "muerto"
+        # Si el intervalo es 1800s, un peer que no ha hablado en 3600s está fuera.
+        EXPIRATION_MARGIN = 3600
+
         active_peers = [
             p
             for p in torrent.peers
             if p.last_announce
-            and (now - p.last_announce).total_seconds() < 2 * interval
+            and (now - p.last_announce).total_seconds() < EXPIRATION_MARGIN
         ]
-        seeders = sum(1 for p in active_peers if getattr(p, "is_seed", False))
+
+        seeders = sum(1 for p in active_peers if p.is_seed or p.left == 0)
         leechers = len(active_peers) - seeders
 
         return DataResponse(
-            data={"info_hash": info_hash, "seeders": seeders, "leechers": leechers}
+            data={
+                "info_hash": info_hash,
+                "incomplete": leechers,
+                "complete": seeders,
+            }
         )
 
     @get()

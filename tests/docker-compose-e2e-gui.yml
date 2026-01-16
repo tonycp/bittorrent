@@ -1,0 +1,264 @@
+version: '3.8'
+
+services:
+  # ============================================================
+  # 6 TRACKERS (configurados para replicación y tolerancia a fallos)
+  # ============================================================
+  
+  tracker-1:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-1
+    hostname: tracker-1
+    environment:
+      - SERVICES__TRACKER_ID=tracker-1
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+      - SERVICES__CLUSTER__DISCOVERY_PING_SUBNET=172.28.0.0/24
+      - SERVICES__CLUSTER__MIN_CLUSTER_SIZE=3
+    ports:
+      - "5555:5555"
+      - "5556:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.11
+        aliases:
+          - tracker
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker1-data:/app/data
+    entrypoint: ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]
+
+  tracker-2:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-2
+    hostname: tracker-2
+    environment:
+      - SERVICES__TRACKER_ID=tracker-2
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+      - SERVICES__CLUSTER__DISCOVERY_PING_SUBNET=172.28.0.0/24
+      - SERVICES__CLUSTER__MIN_CLUSTER_SIZE=3
+    ports:
+      - "5557:5555"
+      - "5558:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.12
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker2-data:/app/data
+    entrypoint: ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]
+
+  tracker-3:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-3
+    hostname: tracker-3
+    environment:
+      - SERVICES__TRACKER_ID=tracker-3
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+      - SERVICES__CLUSTER__DISCOVERY_PING_SUBNET=172.28.0.0/24
+      - SERVICES__CLUSTER__MIN_CLUSTER_SIZE=3
+    ports:
+      - "5559:5555"
+      - "5560:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.13
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker3-data:/app/data
+    entrypoint: ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]
+
+  tracker-4:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-4
+    hostname: tracker-4
+    environment:
+      - SERVICES__TRACKER_ID=tracker-4
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+      - SERVICES__CLUSTER__DISCOVERY_PING_SUBNET=172.28.0.0/24
+      - SERVICES__CLUSTER__MIN_CLUSTER_SIZE=3
+    ports:
+      - "5561:5555"
+      - "5562:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.14
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker4-data:/app/data
+    entrypoint: ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]
+
+  tracker-5:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-5
+    hostname: tracker-5
+    environment:
+      - SERVICES__TRACKER_ID=tracker-5
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+      - SERVICES__CLUSTER__DISCOVERY_PING_SUBNET=172.28.0.0/24
+      - SERVICES__CLUSTER__MIN_CLUSTER_SIZE=3
+    ports:
+      - "5563:5555"
+      - "5564:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.15
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker5-data:/app/data
+    entrypoint: ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]
+
+  tracker-6:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    container_name: tracker-6
+    hostname: tracker-6
+    environment:
+      - SERVICES__TRACKER_ID=tracker-6
+      - SERVICES__TRACKER__HOST=0.0.0.0
+      - SERVICES__TRACKER__PORT=5555
+      - SERVICES__CLUSTER__HOST=0.0.0.0
+      - SERVICES__CLUSTER__PORT=5556
+      - SERVICES__CLUSTER__SERVICE_NAME=tracker
+      - SERVICES__CLUSTER__DISCOVERY_PING_SUBNET=172.28.0.0/24
+      - SERVICES__CLUSTER__MIN_CLUSTER_SIZE=3
+    ports:
+      - "5565:5555"
+      - "5566:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.16
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker6-data:/app/data
+    entrypoint: ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]
+
+  # ============================================================
+  # 2 CLIENTES CON GUI (para prueba de transferencia P2P)
+  # ============================================================
+  
+  client-1:
+    build:
+      context: ../client
+      dockerfile: Dockerfile
+    container_name: client-1
+    hostname: client-1
+    environment:
+      # X11 forwarding para GUI
+      - DISPLAY=${DISPLAY:-host.docker.internal:0}
+      # Configuración de trackers (todos los 6)
+      - TRACKER_URLS=tracker-1:5555,tracker-2:5555,tracker-3:5555,tracker-4:5555,tracker-5:5555,tracker-6:5555
+      - LISTEN_PORT=6881
+      - PEER_ID=client-1-$(date +%s)
+      - DOWNLOAD_PATH=/app/downloads
+    ports:
+      - "6881:6881"  # Puerto P2P
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.21
+    volumes:
+      # X11 socket para GUI
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Código fuente
+      - ../client/src:/app/src
+      - ../bit_lib:/bit_lib
+      # Datos
+      - client1-downloads:/app/downloads
+      - client1-torrents:/app/torrents
+      - client1-config:/app/config
+    depends_on:
+      - tracker-1
+      - tracker-2
+      - tracker-3
+      - tracker-4
+      - tracker-5
+      - tracker-6
+
+  client-2:
+    build:
+      context: ../client
+      dockerfile: Dockerfile
+    container_name: client-2
+    hostname: client-2
+    environment:
+      - DISPLAY=${DISPLAY:-host.docker.internal:0}
+      - TRACKER_URLS=tracker-1:5555,tracker-2:5555,tracker-3:5555,tracker-4:5555,tracker-5:5555,tracker-6:5555
+      - LISTEN_PORT=6882
+      - PEER_ID=client-2-$(date +%s)
+      - DOWNLOAD_PATH=/app/downloads
+    ports:
+      - "6882:6882"
+    networks:
+      torrent_net:
+        ipv4_address: 172.28.0.22
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../client/src:/app/src
+      - ../bit_lib:/bit_lib
+      - client2-downloads:/app/downloads
+      - client2-torrents:/app/torrents
+      - client2-config:/app/config
+    depends_on:
+      - tracker-1
+      - tracker-2
+      - tracker-3
+      - tracker-4
+      - tracker-5
+      - tracker-6
+
+networks:
+  torrent_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  tracker1-data:
+  tracker2-data:
+  tracker3-data:
+  tracker4-data:
+  tracker5-data:
+  tracker6-data:
+  client1-downloads:
+  client1-torrents:
+  client1-config:
+  client2-downloads:
+  client2-torrents:
+  client2-config:

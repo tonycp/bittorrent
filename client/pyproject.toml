@@ -1,7 +1,7 @@
 [project]
 name = "client"
 version = "0.1.0"
-description = "Add your description here"
+description = "Cliente BitTorrent P2P con GUI y CLI"
 readme = "README.md"
 authors = [{ name = "tonycp", email = "tonycadahia@gmail.com" }]
 requires-python = ">=3.13"
@@ -17,6 +17,7 @@ dependencies = [
     "logging>=0.4.9.6",
     "matplotlib>=3.10.6",
     "tk>=0.1.0",
+    "tabulate>=0.9.0",
 ]
 
 [project.optional-dependencies]
@@ -28,7 +29,7 @@ libs = [
 bit-lib = { path = "../bit_lib", editable = true } 
 
 [project.scripts]
-client = "client:main"
+client = "src.cli.cli_standalone:main"
 
 [build-system]
 requires = ["uv_build>=0.9.15,<0.10.0"]
@@ -36,4 +37,4 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
-module-name = "client"
+module-name = "src"

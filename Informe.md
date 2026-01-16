@@ -30,21 +30,92 @@ Tanto clientes como trackers se despliegan como contenedores en una o varias red
 
 ## Procesos, hilos y asincronía
 
-En cada tracker se levantan varios servicios lógicos dentro del mismo proceso principal. Por un lado, un servidor de escucha basado en sockets que recibe peticiones de clientes y de otros trackers, despachando cada solicitud de forma asíncrona mediante un event loop. Por otro, un servicio encargado de la replicación y consistencia de los datos de metadatos entre trackers, y un servicio de sincronización de acciones periódicas como limpieza de peers inactivos o intercambio de estados.  
+### Arquitectura del Tracker
 
-En cada cliente se ejecuta al menos un proceso que integra la interfaz gráfica y la lógica de red. Este proceso mantiene: una GUI para gestionar torrents y su progreso, uno o varios servicios de descarga (uno por archivo o torrent en la lista de descargas) y un servidor de escucha que expone los archivos anunciados para que otros peers puedan descargarlos. La separación funcional dentro del proceso facilita diferenciar claramente el plano de control (GUI, coordinación con trackers) del plano de datos (transferencia de chunks entre peers).  
+En cada tracker se levantan varios servicios lógicos dentro del mismo proceso principal. Por un lado, un servidor de escucha basado en sockets que recibe peticiones de clientes y de otros trackers, despachando cada solicitud de forma asíncrona mediante un event loop (`asyncio`). Por otro, un servicio encargado de la replicación y consistencia de los datos de metadatos entre trackers (`ReplicationService`), y un servicio de sincronización de acciones periódicas como limpieza de peers inactivos (`CleanupService`) o intercambio de estados de cluster (`ClusterService`).
 
-En cuanto a concurrencia interna, los hilos se emplean principalmente para gestionar las descargas de archivos en paralelo, de forma que un cliente pueda descargar distintos torrents o varios chunks simultáneamente sin bloquear la interfaz. La gestión de peticiones de red (especialmente en los trackers) se apoya en un modelo asíncrono basado en asyncio o un event loop similar, lo que permite atender muchas conexiones concurrentes con un único proceso y un conjunto controlado de hilos. No se utilizan procesos adicionales mediante multiprocessing; todo ocurre en el proceso principal de cada nodo, lo que simplifica el despliegue en contenedores.  
+Los trackers utilizan `bit_lib` como biblioteca compartida que provee servicios base (`HostService`, `ClientService`, `DispatcherService`) para implementar tanto el rol de servidor (recibir peticiones RPC) como de cliente (hacer peticiones a otros trackers). Todos los servicios se ejecutan de forma asíncrona en un único event loop, lo que permite manejar cientos de conexiones concurrentes sin necesidad de múltiples threads o procesos.
+
+### Arquitectura del Cliente
+
+En cada cliente se ejecuta un proceso que integra la interfaz gráfica (Tkinter) y la lógica de red asíncrona. La arquitectura del cliente también se basa en `bit_lib` y separa claramente las responsabilidades:
+
+1. **GUI Thread** (Tkinter): Hilo principal que ejecuta la interfaz gráfica, mantiene la responsividad del UI y delega operaciones de red al `ClientManager`.
+
+2. **Event Loop Thread**: Hilo separado dedicado que ejecuta el event loop asíncrono (`asyncio`) para todos los servicios de red. Este diseño evita que operaciones de red bloqueantes congelen la GUI.
+
+3. **ClientManager**: Coordinador central que integra:
+   - **PeerService**: Servicio híbrido (hereda de `HostService` y `ClientService`) que actúa como servidor para recibir peticiones de chunks de otros peers y como cliente para solicitarlos. Maneja upload/download concurrente de múltiples chunks usando transferencia binaria eficiente.
+   - **TrackerManager**: Gestor de comunicación con trackers que envuelve a `TrackerClient` (basado en `ClientService`). Implementa tolerancia a fallos mediante rotación automática entre trackers conocidos.
+
+4. **Descargas Concurrentes**: Cada torrent activo tiene una tarea asíncrona (`asyncio.Task`) que coordina la descarga de chunks desde múltiples peers en paralelo (hasta 5 chunks simultáneos por defecto). Los chunks se descargan de peers diferentes para maximizar throughput y resiliencia.
+
+La separación funcional dentro del proceso facilita diferenciar claramente el plano de control (GUI, coordinación con trackers) del plano de datos (transferencia de chunks entre peers). No se utilizan procesos adicionales mediante multiprocessing; todo ocurre en el proceso principal de cada nodo con dos threads controlados (GUI + event loop), lo que simplifica el despliegue en contenedores.  
 
 ---
 
 ## Comunicación
 
-La comunicación entre nodos se implementa mediante sockets TCP y, cuando es necesario, UDP, sobre un protocolo propio diseñado para el proyecto. Encima de estos sockets se define un RPC ligero con estructuras de mensajes bien tipadas, que permite a clientes y trackers invocar operaciones remotas (registro de peer, consulta de peers de un torrent, actualización de estado, etc.) sin depender de marcos externos no cubiertos en la asignatura.  
+La comunicación entre nodos se implementa mediante sockets TCP sobre un protocolo propio diseñado para el proyecto usando `bit_lib`, una biblioteca compartida entre trackers y clientes. El protocolo define un RPC ligero con estructuras de mensajes bien tipadas (`Request`, `Response`, `Error`) que permite invocar operaciones remotas sin depender de frameworks externos.
 
-A alto nivel se distinguen dos grandes clases de mensajes: mensajes de request y mensajes de datos. Los mensajes de request incluyen campos como `endpoint`, `handler`, `data` y `command`, lo que permite dirigir la petición al manejador adecuado en cada nodo. Los mensajes asociados a metadatos de archivos (por ejemplo, para consultar el estado de un torrent concreto) incluyen campos como `hash` e `index`. Ambos tipos de mensaje comparten un conjunto de metacampos, entre ellos `msg_id`, `timestamp` y `version`, que se usan posteriormente para sincronización y resolución de conflictos.  
+### Protocolo de Mensajería
 
-En cuanto a puertos, se reserva un rango por encima del 5555 para los servicios de tracker y otro por encima del 5550 para los servicios de cliente. Para la comunicación distribuida entre trackers (replicación y coordinación) se emplea un subconjunto específico del rango a partir del 5560, lo que facilita configurar reglas de red y cortafuegos en Docker. Existe comunicación servidor-servidor entre trackers para la replicación de tablas y la coordinación de decisiones, además de la comunicación cliente-servidor típica entre clientes y trackers y la comunicación peer-to-peer directa entre clientes para la transferencia de chunks.  
+El protocolo soporta tres tipos de mensajes principales:
+
+1. **Request**: Mensajes de petición que incluyen:
+   - `controller`: Controlador destino (e.g., "Register", "Event", "Chunk")
+   - `command`: Operación a ejecutar (e.g., "create", "get", "update")
+   - `func`: Función específica del handler
+   - `args`: Argumentos de la petición
+   - `msg_id`: Identificador único para correlacionar respuestas
+   - `timestamp`: Marca temporal para ordenamiento
+
+2. **Response**: Mensajes de respuesta exitosa que incluyen:
+   - `reply_to`: ID del Request al que responde
+   - `data`: Datos de respuesta (JSON serializable)
+
+3. **Error**: Mensajes de error que incluyen:
+   - `reply_to`: ID del Request que falló
+   - `data`: Información del error
+
+Adicionalmente, el protocolo soporta **transferencia binaria** para datos grandes (chunks de archivos) mediante el método `send_binary()`, que permite enviar datos con metadata asociada sin overhead de serialización JSON.
+
+### Comunicación Cliente-Tracker
+
+Los clientes se comunican con trackers usando `TrackerClient` (hereda de `ClientService`) para:
+
+- **Registrar torrents**: Endpoint `Register:create:create_torrent`
+- **Anunciar peers**: Endpoint `Event:create:event` con operación `peer_announce`
+- **Obtener peers**: Endpoint `Register:get:file_info`
+- **Stop announce**: Endpoint `Event:create:event` con operación `peer_stopped`
+
+Todas estas operaciones generan eventos que se replican automáticamente entre trackers mediante `ReplicationService`.
+
+### Comunicación P2P (Cliente-Cliente)
+
+Los clientes se comunican entre sí usando `PeerService` (hereda de `HostService` + `ClientService`) para:
+
+- **Solicitar chunks**: Request `Chunk:get` con `torrent_hash` y `chunk_index`
+- **Servir chunks**: Response con datos binarios usando `send_binary()`
+- **Consultar disponibilidad**: Request `Torrent:info` para obtener lista de chunks disponibles
+
+La transferencia de chunks usa el canal binario del protocolo para maximizar eficiencia.
+
+### Comunicación Tracker-Tracker
+
+Los trackers se comunican entre sí para:
+
+- **Replicación de eventos**: `ReplicationService` envía eventos pendientes a trackers destino usando `hash(torrent) mod N` para particionado
+- **Sincronización de cluster**: `ClusterService` mantiene membresía del cluster, ejecuta elecciones (Bully algorithm), y sincroniza estado
+- **Heartbeats**: Ping periódico entre trackers para detectar fallos
+
+### Puertos y Redes
+
+- **Trackers**: Puerto configurable (típicamente 5555+)
+- **Clientes**: Puerto de escucha P2P configurable (típicamente 6881-6889)
+- **Discovery**: Puerto específico para descubrimiento (configurado en `ClusterSettings`)
+
+Existe comunicación servidor-servidor entre trackers para la replicación de tablas y la coordinación de decisiones, además de la comunicación cliente-servidor típica entre clientes y trackers y la comunicación peer-to-peer directa entre clientes para la transferencia de chunks.  
 
 ---
 

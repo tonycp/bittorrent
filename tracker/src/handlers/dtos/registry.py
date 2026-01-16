@@ -12,4 +12,5 @@ CREATE_TORRENT_DATASET = {
     "file_name": StrictStr,
     "file_size": StrictInt,
     "total_chunks": StrictInt,
+    "piece_length": StrictInt,
 }

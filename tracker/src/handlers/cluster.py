@@ -5,6 +5,7 @@ from bit_lib.handlers.hander import BaseHandler
 from bit_lib.tools.controller import controller
 from bit_lib.context import VectorClock
 from bit_lib.models import DataResponse
+from dataclass_mapper import map_to
 
 from src.models import (
     ClusterState,
@@ -13,6 +14,11 @@ from src.models import (
 from src.models.cluster import TrackerState
 
 from . import dtos
+
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 @controller("Cluster")
@@ -26,35 +32,62 @@ class ClusterHandler(BaseHandler):
         """Recibe anuncio de un tracker que se une al cluster (Bully convergence)"""
 
         # Obtener tracker local desde ClusterState (extrae solo campos comunes)
-        local_tracker = TrackerState.model_validate(self.state, from_attributes=True)
+        local_tracker = map_to(self.state, TrackerState)
 
-        # Bully: elegir el máximo entre local y remoto
-        # Criterio: max(query_count DESC, tracker_id DESC)
+        # Bully: siempre comparar [local, remote, remote_coordinator] si existe
         candidates = [local_tracker, remote]
-        winner = max(candidates, key=lambda t: (t.query_count, t.tracker_id))
 
+        # Si el remote trae un coordinador conocido, incluirlo en la comparación
+        if remote.coordinator_id and remote.coordinator_tracker_id:
+            # Buscar el coordinador que el remote conoce
+            remote_coordinator = await self.state.cache.get(remote.coordinator_id)
+            if remote_coordinator:
+                candidates.append(remote_coordinator)
+
+        winner = max(candidates, key=lambda t: (t.query_count, t.tracker_id))
         new_coordinator = winner.tracker_id
+        new_coordinator_ip = winner.host
+
+        logger.info(
+            f"[{self.state.tracker_id}] JOIN recibido de {remote.tracker_id} | "
+            f"Comparación Bully: local={local_tracker.tracker_id}(q={local_tracker.query_count}) "
+            f"vs remote={remote.tracker_id}(q={remote.query_count}) "
+            f"vs remote_coord={remote.coordinator_tracker_id or 'ninguno'} "
+            f"→ GANADOR: {new_coordinator}"
+        )
 
         # Actualizar estado: ambos trackers saben quién ganó
         self.state.is_coordinator = new_coordinator == self.state.tracker_id
-        self.state.coordinator_id = new_coordinator
+        self.state.coordinator_id = new_coordinator_ip
+        self.state.coordinator_tracker_id = new_coordinator
 
         # Marcar coordinador en ambos
         local_tracker.is_coordinator = local_tracker.tracker_id == new_coordinator
         remote.is_coordinator = remote.tracker_id == new_coordinator
 
-        # Guardar remote en caché (no guardar local, es ruido)
+        logger.debug(
+            f"ClusterHandler: remote={remote}" + f", type={type(remote.vector_clock)}"
+        )  # Guardar remote en caché (no guardar local, es ruido)
         await self.state.cache.set(remote.tracker_id, remote)
 
-        # Merge de vector clocks (actualizar causalidad)
-        await self.state.vector_clock.merge(remote.vector_clock)
-
-        return DataResponse(
-            data={
-                "local_state": local_tracker,
-                "new_coordinator": new_coordinator,  # Ambos ahora saben el mismo líder
-            }
+        logger.debug(
+            f"ClusterHandler: vector_clock={self.state.vector_clock}"
+            + f", type={type(self.state.vector_clock)}"
         )
+
+        # Merge de vector clocks (actualizar causalidad)
+        # await self.state.vector_clock.merge(remote.vector_clock)
+
+        data = {
+            "local_state": local_tracker,
+            "new_coordinator": new_coordinator,  # tracker_id del coordinador
+            "new_coordinator_ip": new_coordinator_ip,  # IP del coordinador
+            "coordinator_host": winner.host,  # Host para poder hacer requests
+            "coordinator_port": winner.port,  # Puerto para poder hacer requests
+        }
+
+        logger.debug(f"ClusterHandler: data={data}")
+        return DataResponse(data=data)
 
     @update(dtos.CLUSTER_HEARTBEAT_DATASET)
     async def heartbeat(
@@ -87,7 +120,7 @@ class ClusterHandler(BaseHandler):
             await self.state.cache.set(tracker_id, new_tracker)
 
         # Merge vector clocks
-        await self.state.vector_clock.merge(vector_clock)
+        self.state.vector_clock.merge(vector_clock)
 
         return DataResponse(
             data={
@@ -95,6 +128,7 @@ class ClusterHandler(BaseHandler):
                 "tracker_id": self.state.tracker_id,
                 "is_coordinator": self.state.is_coordinator,
                 "coordinator_id": self.state.coordinator_id,
+                "coordinator_tracker_id": self.state.coordinator_tracker_id,
             }
         )
 
@@ -119,7 +153,7 @@ class ClusterHandler(BaseHandler):
     async def normalize(self, delta: int):
         """Recibe comando de normalización del líder y aplica delta a query_count local"""
         # Obtener tracker propio desde ClusterState (extrae solo campos comunes)
-        local_tracker = TrackerState.model_validate(self.state, from_attributes=True)
+        local_tracker = map_to(self.state, TrackerState)
 
         # Aplicar normalización con clamp a 0
         current_count = local_tracker.query_count
@@ -139,14 +173,18 @@ class ClusterHandler(BaseHandler):
             }
         )
 
-    @get(dtos.ELECTION_DATASET)
-    async def election(self, candidate_id: str, query_count: int):
+    @update(dtos.ELECTION_DATASET)
+    async def election(
+        self,
+        candidate_id: str,
+        query_count: int,
+    ):
         """
         Responde a solicitud de elección (Algoritmo Bully).
         Si tengo mayor (query_count, tracker_id), respondo con ElectionResponse.
         ClusterService detecta ElectionResponse y propaga automáticamente.
         """
-        local_tracker = TrackerState.model_validate(self.state, from_attributes=True)
+        local_tracker = map_to(self.state, TrackerState)
         local_count = local_tracker.query_count
 
         # Bully: Si tengo más que el candidato, soy mejor candidato

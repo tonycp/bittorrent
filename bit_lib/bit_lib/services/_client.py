@@ -8,14 +8,17 @@ from bit_lib.models import Request, Response, Error
 from .base import BitService
 
 import asyncio
+import logging
 
 Transport = asyncio.Transport
 Future = asyncio.Future
 
+logger = logging.getLogger(__name__)
+
 
 class ClientService(BitService, ABC):
-    def __init__(self):
-        BitService.__init__(self)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.loop = asyncio.get_event_loop()
         self._pending_by_proto: Dict[MProtocol, Dict[str, Future]] = {}
 
@@ -26,7 +29,7 @@ class ClientService(BitService, ABC):
         pend = self._pending_by_proto.pop(protocol, {})
         for f in pend.values():
             if not f.done():
-                f.set_exception(exc)
+                f.set_exception(exc or ConnectionError("Disconnected"))
 
     async def connect(self, host: str, port: int):
         _, protocol = await self.loop.create_connection(self.factory, host, port)
@@ -40,6 +43,11 @@ class ClientService(BitService, ABC):
         timeout: float = 5.0,
     ) -> Response:
         fut: Future[Response] = self.loop.create_future()
+        # Debug logging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.debug(f"ClientService.request: about to connect to {host}:{port}")
         protocol = await self.connect(host, port)
         self._pending_by_proto.setdefault(protocol, {})[request.msg_id] = fut
 
@@ -51,16 +59,28 @@ class ClientService(BitService, ABC):
         if resp.reply_to:
             pend = self._pending_by_proto.get(proto, {})
             fut = pend.pop(resp.reply_to, None)
+            logger.debug(
+                f"ClientService: resolving future for reply_to={resp.reply_to}"
+                + f", found={fut is not None}"
+            )
             if fut and not fut.done():
                 return fut
 
     async def _handle_response(self, protocol: MProtocol, response: Response):
         fut = self.get_future(protocol, response)
         if fut:
+            logger.debug(
+                f"ClientService: setting result for future reply_to={response.reply_to}"
+                + f", response={response}"
+            )
             fut.set_result(response)
 
     async def _handle_error(self, protocol: MProtocol, error: Error):
         fut = self.get_future(protocol, error)
         if fut:
             err = BaseError(**error.data)
+            logger.debug(
+                f"ClientService: setting exception for future reply_to={error.reply_to}"
+                + f", error={err}"
+            )
             fut.set_exception(err)

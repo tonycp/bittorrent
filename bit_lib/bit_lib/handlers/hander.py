@@ -22,6 +22,10 @@ from pydantic import ValidationError
 
 from ._process import _models_validate, _names_validate
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def create_decorator(command: str, dataset: DataSet) -> HdlDec:
     def decorator(func: Controller) -> Handler:
@@ -39,7 +43,7 @@ class HandleDescriptor(Descriptor):
 
         _names_validate(func, names, keys)
 
-        id = ", ".join(f"{arg}:?" for arg in args)
+        id = "".join(f"{arg}:?" for arg in args)
         super().__init__(command, func, id)
 
         self.dataset = dataset
@@ -62,7 +66,13 @@ class HandlerMeta(ControllerMeta):
 class BaseHandler(BaseController, metaclass=HandlerMeta):
     @classmethod
     def get_handler(cls, sub_key: str) -> HdlInfo:
-        return cls._handlers.get(sub_key)
+        result = cls._handlers.get(sub_key)
+        if result is None:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Handler not found for key: '{sub_key}'. Available keys: {list(cls._handlers.keys())}")
+            raise KeyError(f"Handler not found for key: {sub_key}")
+        return result
 
     async def _exec_handler(self, hdl_key, data):
         handler, dataset = self.get_handler(hdl_key)
@@ -78,10 +88,13 @@ class BaseHandler(BaseController, metaclass=HandlerMeta):
             return Response(data=response_data, reply_to=reply_to)
         except ValidationError as e:
             error_msg = f"Error de validación de entrada: {e.errors()}"
+            logger.error(f"Handled validation error in handler {hdl_key}: {error_msg}")
             data_error = InvalidArgumentError(error_msg).to_dict()
         except BaseError as e:
+            logger.error(f"Handled error in handler {hdl_key}: {e}")
             data_error = e.to_dict()
         except Exception as e:
+            logger.error(f"Unhandled error in handler {hdl_key}: {e}")
             details = {"error_type": type(e).__name__}
             data_error = ServiceError(details=details).to_dict()
 

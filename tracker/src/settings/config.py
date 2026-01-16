@@ -30,4 +30,11 @@ class AppSettings(Settings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (JsonConfigSettingsSource(settings_cls),)
+        # Priority: environment vars > JSON file > init > dotenv > secrets
+        return (
+            env_settings,
+            JsonConfigSettingsSource(settings_cls),
+            init_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )

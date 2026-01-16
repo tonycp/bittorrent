@@ -11,8 +11,11 @@ from ._host import HostService
 
 from .base import MProtocol
 
+import logging
 
 __all__ = ["DispatcherService", "UniqueService"]
+
+logger = logging.getLogger(__name__)
 
 
 class DispatcherService(HostService, ABC):
@@ -55,7 +58,12 @@ class UniqueService(HostService, ABC):
         header, data = decode_request(request)
         route, hdl_key = process_header(header)
 
-        if route != self.service_id:
+        logger.debug(
+            f"UniqueService: processing request for route={route} "
+            + f", hdl_key={hdl_key}"
+            + f", dispatch={route == self.service_id}"
+        )
+        if route == self.service_id:
             return await self._dispatch_request(hdl_key, data, request.msg_id)
 
     @abstractmethod

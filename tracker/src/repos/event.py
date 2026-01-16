@@ -70,3 +70,51 @@ class EventLogRepository(SQLAlchemyAsyncRepository[EventTable]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def mark_replicated(self, event_id: str, tracker_id: str) -> EventTable | None:
+        """Marca un evento como replicado a un tracker específico"""
+        event = await self.get(event_id)
+        if not event:
+            return None
+        
+        if event.replicated_to is None:
+            event.replicated_to = {}
+        
+        event.replicated_to[tracker_id] = True
+        return await self.update(event)
+
+    async def get_pending_replication_for_tracker(
+        self, target_tracker_id: str, since_timestamp: int = 0
+    ) -> List[EventTable]:
+        """
+        Obtiene eventos que NO han sido replicados a un tracker específico.
+        Si target_tracker_id es "*", devuelve eventos pendientes para cualquier tracker.
+        Ordenados por timestamp para mantener causalidad.
+        """
+        # Obtener todos los eventos desde since_timestamp
+        stmt = (
+            select(EventTable)
+            .where(
+                EventTable.timestamp > since_timestamp,
+            )
+            .order_by(EventTable.timestamp.asc())
+        )
+        result = await self.session.execute(stmt)
+        all_events = list(result.scalars().all())
+        
+        # Filtrar eventos que ya fueron replicados
+        if target_tracker_id == "*":
+            # Para "*", devuelve eventos que aún no tienen ninguna replicación
+            # O que tienen replicated_to vacío
+            pending = [
+                event for event in all_events
+                if not event.replicated_to or not any(event.replicated_to.values())
+            ]
+        else:
+            # Para un tracker específico, filtrar los que ya fueron replicados a ese tracker
+            pending = [
+                event for event in all_events
+                if not (event.replicated_to and target_tracker_id in event.replicated_to)
+            ]
+        
+        return pending

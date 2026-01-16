@@ -15,7 +15,7 @@ async def exec_test(
     dispatcher: Dispatcher = Closing[Provide[AppContainer.dispatchers.tracker]],
 ):
     names = list(data.keys())
-    id = ", ".join(f"{name}:?" for name in names)
+    id = "".join(f"{name}:?" for name in names)
     hdl_key = get_index_sub(command, method, id)
     return await dispatcher.dispatch(route, hdl_key, data)
 

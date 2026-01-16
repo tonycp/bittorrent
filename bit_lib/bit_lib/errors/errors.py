@@ -24,6 +24,9 @@ class BaseError(Exception, ABC):
             "details": self.details,
         }
 
+    def __str__(self) -> str:
+        return f"BaseError(status={self.status}, message={self.message}, details={self.details})"
+
 
 class InvalidArgumentError(BaseError):
     def __init__(self, message: str):

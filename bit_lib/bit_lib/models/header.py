@@ -12,7 +12,7 @@ from .message import Request
 
 
 def get_args(request: Request):
-    return list(request.args.keys())
+    return list(request.args.keys()) if request.args else []
 
 
 def gen_index(*args):
@@ -30,7 +30,7 @@ class Header:
 
 def decode_request(request: Request) -> Tuple[Header, Dict[str, Any]]:
     try:
-        return map_to(request, Header), request.args
+        return map_to(request, Header), request.args or {}
     except Exception as e:
         raise ValueError("Invalid request format") from e
 
@@ -39,5 +39,5 @@ def process_header(header: Header):
     if not (header.command and header.func):
         raise ValueError("Missing command or func in header")
     endpoint = header.controller or ""
-    args = ":?".join(header.args) + ":?"
+    args = ":?".join(header.args) + ":?" if header.args else ""
     return endpoint, gen_index(header.command, header.func, args)

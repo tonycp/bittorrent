@@ -24,10 +24,27 @@ PEER_COMPLETED_DATASET = {
     "peer_id": StrictStr,
 }
 
+TORRENT_CREATED_DATASET = {
+    "info_hash": StrictStr,
+    "file_name": StrictStr,
+    "file_size": StrictInt,
+    "total_chunks": StrictInt,
+    "piece_length": StrictInt,
+}
+
 # Para replicar lista de eventos incrementales
 REPLICATE_EVENTS_DATASET = {
     "source_tracker_id": StrictStr,
     "events": List[EventLog],
+}
+
+# Para chunks de snapshot vía requests (base64 encoded)
+REPLICATE_SNAPSHOT_CHUNK_DATASET = {
+    "source_tracker_id": StrictStr,
+    "snapshot_id": StrictStr,
+    "block_index": StrictInt,
+    "total_size": StrictInt,
+    "chunk_data": StrictStr,  # base64 encoded
 }
 
 # Para snapshot inicial (tracker nuevo)
