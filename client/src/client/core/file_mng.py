@@ -2,10 +2,13 @@ import os
 import hashlib
 import json
 import humanize
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 from dataclasses import asdict
 
-from ..connection.network import NetworkManager
+# Evitar import circular - NetworkManager solo se usa en start_download
+if TYPE_CHECKING:
+    from ..connection.network import NetworkManager
+
 from .file_downloader import FileDownloader
 from ..interface import TorrentData, DownloadProgress, ChunkInfo
 from ..const import TK_URL
@@ -126,7 +129,7 @@ class FileManager:
     def start_download(
         self,
         torrent_data: TorrentData,
-        network_manager: NetworkManager,
+        network_manager: Optional['NetworkManager'] = None,
     ) -> FileDownloader:
         file_path = os.path.join(self.download_path, torrent_data.file_name)
         file_hash = torrent_data.file_hash

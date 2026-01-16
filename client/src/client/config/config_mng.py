@@ -34,25 +34,39 @@ class ConfigManager:
 
     def set_defaults(self):
         """Set default configuration values"""
+        # Siempre usar /app para entorno Docker
         defaults = {
-            DL_PATH: str(Path.home() / "Downloads" / "bittorrent"),
-            TN_PATH: str(Path.home() / ".local" / "share" / "bittorrent" / "torrents"),
-            TK_URL: "http://localhost:5555",
+            DL_PATH: "/app/downloads",
+            TN_PATH: "/app/torrents",
+            TK_URL: "tracker-1:5555",
             LT_PORT: "6881",
             MAX_DL_RATE: "0",
             MAX_UL_RATE: "0",
             MAX_CON: "50",
         }
         
-        for key in set(sections.values()):
-            if not self.config.has_section(key):
-                self.config.add_section(key)
-        
+        # Forzar valores correctos incluso si el archivo existe
         for key, value in defaults.items():
             sec = sections.get(key, GENERAL)
             if not self.config.has_section(sec):
                 self.config.add_section(sec)
-            self.config.set(sec, key, str(value))
+            # Sobrescribir siempre las rutas para asegurar /app
+            if key in [DL_PATH, TN_PATH]:
+                self.config.set(sec, key, value)
+        
+        # Asegurar que existen todas las secciones
+        for key in set(sections.values()):
+            if not self.config.has_section(key):
+                self.config.add_section(key)
+        
+        # Aplicar valores por defecto solo si no existen
+        for key, value in defaults.items():
+            sec = sections.get(key, GENERAL)
+            if not self.config.has_section(sec):
+                self.config.add_section(sec)
+            # Solo escribir si no existe (excepto rutas que ya se forzaron arriba)
+            if key not in [DL_PATH, TN_PATH] and not self.config.has_option(sec, key):
+                self.config.set(sec, key, str(value))
 
     def get(self, section: str, key: str) -> str:
         """Get a configuration value"""
@@ -91,8 +105,17 @@ class ConfigManager:
         return self.get(GENERAL, TN_PATH)
 
     def get_tracker_address(self):
-        ip, port = self.get(GENERAL, TK_URL).split(":")
-        return ip, int(port)
+        """Retorna (ip, port) desde tracker_address, manejando formato URL"""
+        addr = self.get(GENERAL, TK_URL)
+        # Remover protocolo si existe (http://, https://)
+        if "://" in addr:
+            addr = addr.split("://")[1]
+        # Separar ip:puerto
+        if ":" in addr:
+            ip, port = addr.split(":")
+            return ip, int(port)
+        # Si no hay puerto, usar default
+        return addr, 5555
 
     def get_listen_port(self):
         value = self.get(GENERAL, LT_PORT)

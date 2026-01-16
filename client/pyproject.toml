@@ -29,7 +29,8 @@ libs = [
 bit-lib = { path = "../bit_lib", editable = true } 
 
 [project.scripts]
-client = "src.cli.cli_standalone:main"
+cli = "src.cli.cli_standalone:main"
+client = "src.client.client_standalone:main"
 
 [build-system]
 requires = ["uv_build>=0.9.15,<0.10.0"]

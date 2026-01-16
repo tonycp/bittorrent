@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 
 from ..core.tracker_manager import TrackerManager
+from ..core.file_mng import FileManager
 from ..config.config_mng import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ class ClientManager:
 
         # Servicios core
         self.tracker_manager: Optional[TrackerManager] = None
+        self.file_manager: Optional[FileManager] = None
 
         # Event loop en thread separado
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -137,11 +139,16 @@ class ClientManager:
 
     async def _start_services(self):
         """Inicia servicios asíncronos"""
+        # Iniciar file manager
+        download_path = self.config.get_download_path()
+        torrent_path = self.config.get_torrent_path()
+        self.file_manager = FileManager(download_path, torrent_path)
+        
         # Iniciar tracker manager
         self.tracker_manager = TrackerManager(self.config)
         await self.tracker_manager.start()
 
-        logger.info("TrackerManager iniciado")
+        logger.info("FileManager y TrackerManager iniciados")
 
     async def _stop_services(self):
         """Detiene servicios asíncronos"""

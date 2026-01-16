@@ -1,8 +1,12 @@
 import os
+import logging
+import humanize
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from ..config.config_mng import ConfigManager
 from ..core.torrent_client import TorrentClient
+
+logger = logging.getLogger(__name__)
 
 
 class BitTorrentClientGUI:
@@ -158,8 +162,8 @@ class BitTorrentClientGUI:
     def open_settings(self):
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Configuración del Cliente")
-        settings_window.geometry("650x550")
-        settings_window.resizable(False, False)
+        settings_window.geometry("700x650")
+        settings_window.resizable(True, True)
 
         main_frame = ttk.Frame(settings_window, padding="20")
         main_frame.grid(row=0, column=0, sticky="nsew")
@@ -368,6 +372,9 @@ class BitTorrentClientGUI:
                 self.config_manager.set("General", "tracker_address", tracker_address)
                 self.config_manager.set("General", "max_download_rate", download_limit)
                 self.config_manager.set("General", "max_upload_rate", upload_limit)
+                
+                # IMPORTANTE: Guardar cambios al archivo
+                self.config_manager.save()
 
                 self.torrent_client.setup_session()
 
@@ -427,8 +434,11 @@ class BitTorrentClientGUI:
                 msg += f"Archivo torrent guardado en:\n{torrent_file}"
 
                 messagebox.showinfo("Torrent Creado", msg)
+                
+                # Agregar automáticamente a la lista de torrents (ya está en seeding)
+                # El torrent ya fue agregado en create_torrent_file, solo actualizamos UI
                 self.status_message.config(
-                    text=f"Torrent creado: {torrent_data.file_name}"
+                    text=f"Torrent creado y agregado: {torrent_data.file_name} (100%)"
                 )
             except Exception as e:
                 messagebox.showerror("Error", f"Error al crear torrent: {str(e)}")
@@ -523,10 +533,20 @@ class BitTorrentClientGUI:
         )
 
     def _selected_action(self, selected, action, msg=None):
+        errors = []
         for iid in selected:
-            action(iid)
+            try:
+                action(iid)
+            except Exception as e:
+                logger.error(f"Error ejecutando acción en {iid}: {e}")
+                errors.append(str(e))
 
-        if msg:
+        if errors:
+            messagebox.showerror(
+                "Errores",
+                f"Se encontraron {len(errors)} errores:\n" + "\n".join(errors[:3])
+            )
+        elif msg:
             self.status_message.config(text=msg)
 
     def update_torrents(self):
@@ -539,20 +559,34 @@ class BitTorrentClientGUI:
             active_torrents = 0
 
             for iid in handles:
-                status = self.torrent_client.get_status(iid)
-                values = (
-                    status.file_name,
-                    f"{status.file_size:.1f}",
-                    f"{status.downloaded_size:.1f}",
-                    f"{status.progress:.1f}",
-                    f"{status.total_chunks:.1f}",
-                )
+                try:
+                    status = self.torrent_client.get_status(iid)
+                    
+                    # Formatear tamaños usando humanize
+                    file_size_str = humanize.naturalsize(status.file_size, binary=True)
+                    downloaded_size_str = humanize.naturalsize(status.downloaded_size, binary=True)
+                    
+                    logger.debug(f"[GUI_UPDATE] Torrent: {status.file_name}")
+                    logger.debug(f"[GUI_UPDATE] Status - size: {file_size_str}, downloaded: {downloaded_size_str}")
+                    logger.debug(f"[GUI_UPDATE] Status - progress: {status.progress:.1f}%, chunks: {status.total_chunks}")
+                    
+                    values = (
+                        status.file_name,
+                        file_size_str,
+                        downloaded_size_str,
+                        f"{status.progress:.1f}",
+                        f"{status.total_chunks:.0f}",
+                    )
 
-                wargs = {"values": values}
-                if self.tree.exists(iid):
-                    self.tree.item(iid, **wargs)
-                else:
-                    self.tree.insert("", tk.END, iid=iid, **wargs)
+                    wargs = {"values": values}
+                    if self.tree.exists(iid):
+                        self.tree.item(iid, **wargs)
+                    else:
+                        self.tree.insert("", tk.END, iid=iid, **wargs)
+                except Exception as e:
+                    logger.error(f"Error actualizando torrent {iid}: {e}")
+                    # Continuar con los demás torrents
+                    continue
 
             num_torrents = len(handles)
             self.torrents_label.config(
@@ -585,6 +619,8 @@ class BitTorrentClientGUI:
                 self.connection_label.config(text="🔌 Desconectado", foreground="red")
 
         except Exception as e:
-            print(f"Error actualizando torrents: {e}")
+            logger.error(f"Error crítico actualizando torrents: {e}", exc_info=True)
+            # No mostrar error al usuario en cada update, solo loggear
 
+        # Continuar el loop incluso si hubo errores
         self.root.after(1000, self.update_torrents)

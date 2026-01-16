@@ -1,0 +1,220 @@
+version: '3.8'
+
+# ============================================================
+# TEMPLATES REUTILIZABLES (usando YAML anchors)
+# ============================================================
+
+x-tracker-template: &tracker-template
+  image: bt_tracker:latest
+  networks:
+    - torrent_net
+  volumes:
+    - ../tracker/src:/app/src
+    - ../bit_lib:/bit_lib
+  entrypoint: ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]
+  environment: &tracker-env
+    SERVICES__TRACKER__HOST: 0.0.0.0
+    SERVICES__TRACKER__PORT: 5555
+    SERVICES__CLUSTER__HOST: 0.0.0.0
+    SERVICES__CLUSTER__PORT: 5556
+    SERVICES__CLUSTER__SERVICE_NAME: tracker
+    SERVICES__CLUSTER__DISCOVERY_PING_SUBNET: 172.29.0.0/24
+    SERVICES__CLUSTER__MIN_CLUSTER_SIZE: 3
+
+x-client-template: &client-template
+  image: bt_client:latest
+  networks:
+    - torrent_net
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - ../client/src:/app/src
+    - ../bit_lib:/bit_lib
+  entrypoint: ["/bin/sh", "-c", "uv sync --no-managed-python && uv pip install -e /bit_lib && uv run client"]
+  environment: &client-env
+    DISPLAY: ${DISPLAY:-host.docker.internal:0}
+    TRACKER_URLS: tracker-1:5555,tracker-2:5555,tracker-3:5555,tracker-4:5555
+
+services:
+  # ============================================================
+  # BASE IMAGES (build solo una vez, no se ejecutan)
+  # ============================================================
+  
+  tracker-base:
+    build:
+      context: ../tracker
+      dockerfile: Dockerfile
+    image: bt_tracker:latest
+    container_name: tracker-base-build
+    command: /bin/true
+    profiles:
+      - build-only
+  
+  client-base:
+    build:
+      context: ../client
+      dockerfile: Dockerfile
+    image: bt_client:latest
+    container_name: client-base-build
+    command: /bin/true
+    profiles:
+      - build-only
+
+  # ============================================================
+  # 4 TRACKERS (usando template)
+  # ============================================================
+  
+  tracker-1:
+    <<: *tracker-template
+    container_name: tracker-1
+    hostname: tracker-1
+    environment:
+      <<: *tracker-env
+      SERVICES__TRACKER_ID: tracker-1
+    ports:
+      - "5555:5555"
+      - "5556:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.29.0.11
+        aliases:
+          - tracker
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker1-data:/app/data
+
+  tracker-2:
+    <<: *tracker-template
+    container_name: tracker-2
+    hostname: tracker-2
+    environment:
+      <<: *tracker-env
+      SERVICES__TRACKER_ID: tracker-2
+    ports:
+      - "5557:5555"
+      - "5558:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.29.0.12
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker2-data:/app/data
+
+  tracker-3:
+    <<: *tracker-template
+    container_name: tracker-3
+    hostname: tracker-3
+    environment:
+      <<: *tracker-env
+      SERVICES__TRACKER_ID: tracker-3
+    ports:
+      - "5559:5555"
+      - "5560:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.29.0.13
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker3-data:/app/data
+
+  tracker-4:
+    <<: *tracker-template
+    container_name: tracker-4
+    hostname: tracker-4
+    environment:
+      <<: *tracker-env
+      SERVICES__TRACKER_ID: tracker-4
+    ports:
+      - "5561:5555"
+      - "5562:5556"
+    networks:
+      torrent_net:
+        ipv4_address: 172.29.0.14
+    volumes:
+      - ../tracker/src:/app/src
+      - ../bit_lib:/bit_lib
+      - tracker4-data:/app/data
+
+  # ============================================================
+  # 2 CLIENTES CON GUI (usando template)
+  # ============================================================
+  
+  client-1:
+    <<: *client-template
+    container_name: client-1
+    hostname: client-1
+    environment:
+      <<: *client-env
+      LISTEN_PORT: 6881
+      PEER_ID: client-1
+      DOWNLOAD_PATH: /app/downloads
+    ports:
+      - "6881:6881"
+      - "5678:5678"
+    networks:
+      torrent_net:
+        ipv4_address: 172.29.0.21
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../client/src:/app/src
+      - ../bit_lib:/bit_lib
+      - client1-downloads:/app/downloads
+      - shared-torrents:/app/torrents  # Compartido entre clientes
+      - client1-config:/app/config
+    depends_on:
+      - tracker-1
+      - tracker-2
+      - tracker-3
+      - tracker-4
+
+  client-2:
+    <<: *client-template
+    container_name: client-2
+    hostname: client-2
+    environment:
+      <<: *client-env
+      LISTEN_PORT: 6882
+      PEER_ID: client-2
+      DOWNLOAD_PATH: /app/downloads
+    ports:
+      - "6882:6882"
+      - "5679:5678"
+    networks:
+      torrent_net:
+        ipv4_address: 172.29.0.22
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../client/src:/app/src
+      - ../bit_lib:/bit_lib
+      - client2-downloads:/app/downloads
+      - shared-torrents:/app/torrents  # Compartido entre clientes
+      - client2-config:/app/config
+    depends_on:
+      - tracker-1
+      - tracker-2
+      - tracker-3
+      - tracker-4
+
+# ============================================================
+# NETWORK Y VOLUMES
+# ============================================================
+
+networks:
+  torrent_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+volumes:
+  tracker1-data:
+  tracker2-data:
+  tracker3-data:
+  tracker4-data:
+  client1-downloads:
+  client1-config:
+  client2-downloads:
+  client2-config:
+  shared-torrents:  # Compartido entre todos los clientes

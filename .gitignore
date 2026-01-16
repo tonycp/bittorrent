@@ -6,6 +6,7 @@
 # User-specific folders
 *__injector_*
 *wiki*
+*.tar
 
 # User-specific files
 *.rsuser

@@ -24,4 +24,4 @@ EXPOSE 5678
 
 # Run sync with extras (bit_lib) on container start, then run the app
 ENTRYPOINT ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && exec \"$@\"", "sh"]
-CMD ["uv", "run", "python", "src/cli/cli_standalone.py"]
+CMD ["uv", "run", "python", "src/client/client_standalone.py"]

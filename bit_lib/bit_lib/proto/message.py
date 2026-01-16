@@ -53,7 +53,9 @@ class DataSerialize:
     @staticmethod
     def decode_data(data: bytes) -> Tuple[MetaData, bytes]:
         size, chunk = DSerial.split_head(data)
-        metadata = DSerial.decode_message(chunk[:size])
+        # Parse metadata as MetaData, not MessageUnion
+        json_str = chunk[:size].decode(cp.ENCODING)
+        metadata = MetaData.model_validate_json(json_str)
         return metadata, chunk[size:]
 
 
