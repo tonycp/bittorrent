@@ -1,8 +1,13 @@
 import os
 import logging
 import humanize
+import asyncio
+import socket
+import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from datetime import datetime
+from typing import Optional, Set
 from ..config.config_mng import ConfigManager
 from ..core.torrent_client import TorrentClient
 
@@ -17,11 +22,34 @@ class BitTorrentClientGUI:
 
         self.config_manager = ConfigManager()
         self.torrent_client = TorrentClient(self.config_manager)
+        
+        # Discovery service (opcional)
+        self._discovery_enabled = True  # Activado por defecto
+        self._last_discovery = None
+        self._discovery_interval = 60  # 60 segundos
+        self._discovery_running = False  # Flag para evitar ejecuciones concurrentes
 
         self.setup_menu()
         self.setup_ui()
+        
+        # Inicializar TrackerManager al inicio para que el label se actualice
+        self._init_tracker_manager()
 
         self.update_torrents()
+    
+    def _init_tracker_manager(self):
+        """Inicializa el TrackerManager en un thread separado"""
+        def init_async():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.torrent_client.tracker_manager.start())
+            finally:
+                loop.close()
+        
+        thread = threading.Thread(target=init_async, daemon=True)
+        thread.start()
 
     def setup_menu(self):
         menubar = tk.Menu(self.root)
@@ -109,6 +137,12 @@ class BitTorrentClientGUI:
             left_status_frame, text="🔌 Desconectado", foreground="red"
         )
         self.connection_label.pack(side=tk.LEFT, padx=(0, 15))
+        
+        # Añadir label para tracker actual
+        self.tracker_label = ttk.Label(
+            left_status_frame, text="📡 Tracker: --", foreground="gray"
+        )
+        self.tracker_label.pack(side=tk.LEFT, padx=(0, 15))
 
         self.torrents_label = ttk.Label(left_status_frame, text="📦 Torrents: 0")
         self.torrents_label.pack(side=tk.LEFT, padx=(0, 15))
@@ -617,6 +651,28 @@ class BitTorrentClientGUI:
                 self.connection_label.config(text="🔌 Conectado", foreground="green")
             else:
                 self.connection_label.config(text="🔌 Desconectado", foreground="red")
+            
+            # Actualizar tracker actual
+            current_tracker = self.torrent_client.tracker_manager.get_current_tracker()
+            if current_tracker:
+                host, port = current_tracker
+                # Mostrar solo los últimos octetos de la IP para ahorrar espacio
+                ip_short = ".".join(host.split(".")[-2:])
+                self.tracker_label.config(
+                    text=f"📡 Tracker: {ip_short}:{port}", 
+                    foreground="green"
+                )
+            else:
+                self.tracker_label.config(text="📡 Tracker: --", foreground="gray")
+            
+            # Discovery periódico de trackers (cada 60 segundos)
+            if self._discovery_enabled and not self._discovery_running:
+                now = datetime.now()
+                if self._last_discovery is None or (now - self._last_discovery).total_seconds() >= self._discovery_interval:
+                    self._last_discovery = now
+                    # Ejecutar discovery en thread separado para no bloquear GUI
+                    thread = threading.Thread(target=self._discover_trackers_background, daemon=True)
+                    thread.start()
 
         except Exception as e:
             logger.error(f"Error crítico actualizando torrents: {e}", exc_info=True)
@@ -624,3 +680,74 @@ class BitTorrentClientGUI:
 
         # Continuar el loop incluso si hubo errores
         self.root.after(1000, self.update_torrents)
+    
+    def _discover_trackers_background(self):
+        """Descubre trackers en background (ejecuta en thread separado)"""
+        if self._discovery_running:
+            return
+        
+        self._discovery_running = True
+        try:
+            # Importar aquí para evitar errores si bit_lib no está disponible
+            from bit_lib.services import DockerDNSDiscovery, PingSweepDiscovery
+            
+            async def discover():
+                discovered = set()
+                client_ip = self._get_client_ip()
+                tracker_port = 5555
+                service_name = "tracker"
+                subnet = "172.29.0.0/24"
+                
+                try:
+                    # DNS Discovery
+                    dns = DockerDNSDiscovery(client_ip, tracker_port)
+                    ips = await dns.resolve_service(service_name, use_cache=False)
+                    for ip in ips:
+                        discovered.add((ip, tracker_port))
+                    logger.debug(f"DNS discovery: {len(ips)} trackers encontrados")
+                except Exception as e:
+                    logger.debug(f"DNS discovery falló: {e}")
+                
+                # Ping sweep siempre (para encontrar todos los trackers)
+                try:
+                    ping = PingSweepDiscovery(client_ip, tracker_port)
+                    alive = await ping.ping_range(subnet, tracker_port)
+                    discovered.update(alive)
+                    logger.debug(f"Ping sweep: {len(alive)} trackers encontrados")
+                except Exception as e:
+                    logger.debug(f"Ping sweep falló: {e}")
+                
+                return discovered
+            
+            # Crear nuevo event loop para este thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                discovered = loop.run_until_complete(discover())
+                
+                # Añadir trackers descubiertos
+                for host, port in discovered:
+                    self.torrent_client.tracker_manager.add_tracker(host, port)
+                
+                if discovered:
+                    logger.info(f"Discovery encontró {len(discovered)} trackers")
+            finally:
+                loop.close()
+                
+        except ImportError:
+            logger.warning("bit_lib.services no disponible, discovery deshabilitado")
+            self._discovery_enabled = False
+        except Exception as e:
+            logger.error(f"Error en discovery: {e}")
+        finally:
+            self._discovery_running = False
+    
+    @staticmethod
+    def _get_client_ip() -> str:
+        """Obtiene la IP del cliente"""
+        try:
+            hostname = socket.gethostname()
+            return socket.gethostbyname(hostname)
+        except Exception:
+            return "127.0.0.1"
+

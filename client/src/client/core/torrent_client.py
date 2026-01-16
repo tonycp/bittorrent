@@ -556,9 +556,9 @@ class TorrentClient:
         
         1. Obtener peers del tracker
         2. Determinar chunks faltantes
-        3. Descargar chunks de peers
-        4. Actualizar progreso
-        5. Anunciar al tracker
+        3. Descargar chunks de peers (distribuyendo entre múltiples peers)
+        4. Actualizar progreso y anunciar periódicamente
+        5. Anunciar completado al tracker
         """
         try:
             torrent_info = self._torrents.get(torrent_hash)
@@ -575,7 +575,7 @@ class TorrentClient:
                 logger.warning(f"[DOWNLOAD] No hay peers disponibles para {torrent_hash[:8]}")
                 return
             
-            logger.info(f"[DOWNLOAD] {len(peers)} peers disponibles: {peers}")
+            logger.info(f"[DOWNLOAD] {len(peers)} peers disponibles")
             
             # 2. Determinar chunks faltantes
             missing_chunks = list(range(torrent_info.total_chunks))
@@ -596,10 +596,20 @@ class TorrentClient:
                     f.write(b'\0')
                 logger.info(f"[DOWNLOAD] Archivo creado: {file_path}")
             
+            # Registrar archivo para permitir servir chunks ya descargados
+            # Esto permite que otros peers descarguen de nosotros DURANTE la descarga
+            self.peer_service.register_file(torrent_hash, file_path)
+            
             # 4. Descargar chunks
             downloaded = 0
+            last_announce_time = 0
+            ANNOUNCE_INTERVAL = 30  # Anunciar cada 30 segundos
+            ANNOUNCE_CHUNK_INTERVAL = 5  # O cada 5 chunks
+            
+            import time
+            
             for chunk_idx in missing_chunks:
-                # Seleccionar peer (simple round-robin)
+                # Distribuir chunks entre peers (round-robin)
                 peer = peers[chunk_idx % len(peers)]
                 peer_ip = peer.get('ip')
                 peer_port = peer.get('port')
@@ -623,7 +633,7 @@ class TorrentClient:
                     await self._write_chunk(file_path, chunk_idx, chunk_data, torrent_info.chunk_size)
                     downloaded += 1
                     
-                    # Actualizar progreso
+                    # Actualizar progreso interno
                     torrent_info.downloaded_chunks = downloaded
                     
                     logger.info(
@@ -631,6 +641,38 @@ class TorrentClient:
                         f"({downloaded}/{len(missing_chunks)}) - "
                         f"{(downloaded/len(missing_chunks)*100):.1f}%"
                     )
+                    
+                    # Anunciar progreso periódicamente al tracker
+                    current_time = time.time()
+                    should_announce = (
+                        downloaded % ANNOUNCE_CHUNK_INTERVAL == 0 or
+                        (current_time - last_announce_time) >= ANNOUNCE_INTERVAL
+                    )
+                    
+                    if should_announce and downloaded < len(missing_chunks):
+                        bytes_downloaded = downloaded * torrent_info.chunk_size
+                        bytes_left = torrent_info.file_size - bytes_downloaded
+                        
+                        logger.debug(
+                            f"[DOWNLOAD] Anunciando progreso: "
+                            f"{downloaded}/{torrent_info.total_chunks} chunks, "
+                            f"{bytes_left} bytes restantes"
+                        )
+                        
+                        await self.tracker_manager.announce_async(
+                            info_hash=torrent_hash,
+                            peer_id=self.peer_id,
+                            uploaded=0,
+                            downloaded=bytes_downloaded,
+                            left=bytes_left
+                        )
+                        last_announce_time = current_time
+                        
+                        # Actualizar lista de peers (pueden haber nuevos)
+                        new_peers = await self.tracker_manager.get_peers_async(torrent_hash)
+                        if new_peers and len(new_peers) > len(peers):
+                            logger.info(f"[DOWNLOAD] Peers actualizados: {len(new_peers)} disponibles")
+                            peers = new_peers
                 else:
                     logger.warning(f"[DOWNLOAD] Falló descarga de chunk {chunk_idx}")
             
@@ -639,12 +681,9 @@ class TorrentClient:
                 torrent_info.is_seeding = True
                 torrent_info.downloaded_chunks = torrent_info.total_chunks
                 
-                # Registrar archivo para seeding
-                self.peer_service.register_file(torrent_hash, file_path)
-                
                 logger.info(f"✅ [DOWNLOAD] Descarga completa: {torrent_info.file_name}")
                 
-                # Anunciar completado al tracker
+                # Anunciar completado al tracker (event=completed)
                 await self.tracker_manager.announce_async(
                     info_hash=torrent_hash,
                     peer_id=self.peer_id,

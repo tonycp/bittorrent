@@ -197,6 +197,34 @@ services:
       - tracker-3
       - tracker-4
 
+  client-3:
+    <<: *client-template
+    container_name: client-3
+    hostname: client-3
+    environment:
+      <<: *client-env
+      LISTEN_PORT: 6883
+      PEER_ID: client-3
+      DOWNLOAD_PATH: /app/downloads
+    ports:
+      - "6883:6883"
+      - "5680:5678"
+    networks:
+      torrent_net:
+        ipv4_address: 172.29.0.23
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../client/src:/app/src
+      - ../bit_lib:/bit_lib
+      - client3-downloads:/app/downloads
+      - shared-torrents:/app/torrents  # Compartido entre clientes
+      - client3-config:/app/config
+    depends_on:
+      - tracker-1
+      - tracker-2
+      - tracker-3
+      - tracker-4
+
 # ============================================================
 # NETWORK Y VOLUMES
 # ============================================================
@@ -217,4 +245,6 @@ volumes:
   client1-config:
   client2-downloads:
   client2-config:
+  client3-downloads:
+  client3-config:
   shared-torrents:  # Compartido entre todos los clientes

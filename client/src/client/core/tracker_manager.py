@@ -24,6 +24,9 @@ class TrackerManager:
         # Cache de trackers conocidos (para tolerancia a fallos)
         self._known_trackers: List[tuple] = []
         self._current_tracker_idx = 0
+        
+        # Tracker actual conectado (para GUI)
+        self._current_tracker: Optional[tuple] = None
     
     @staticmethod
     def _get_client_ip() -> str:
@@ -40,17 +43,34 @@ class TrackerManager:
             self.tracker_client = TrackerClient()
             await self.tracker_client.start()
             
-            # Inicializar lista de trackers conocidos
+            # Inicializar lista de trackers conocidos desde config
             tracker_host, tracker_port = self.config_manager.get_tracker_address()
             self._known_trackers = [(tracker_host, tracker_port)]
+            self._current_tracker = (tracker_host, tracker_port)
             
-            logger.info(f"TrackerClient iniciado (tracker principal: {tracker_host}:{tracker_port})")
+            logger.info(f"TrackerManager iniciado (tracker principal: {tracker_host}:{tracker_port})")
     
     async def stop(self):
         """Detiene el cliente de tracker"""
         if self.tracker_client:
             await self.tracker_client.stop()
-            logger.info("TrackerClient detenido")
+            logger.info("TrackerManager detenido")
+    
+    def get_current_tracker(self) -> Optional[tuple]:
+        """Retorna el tracker actual conectado (host, port)"""
+        return self._current_tracker
+    
+    def get_known_trackers(self) -> List[tuple]:
+        """Retorna lista de trackers conocidos"""
+        return self._known_trackers.copy()
+    
+    def add_tracker(self, host: str, port: int):
+        """Añade un tracker a la lista de conocidos"""
+        tracker_tuple = (host, port)
+        if tracker_tuple not in self._known_trackers:
+            self._known_trackers.append(tracker_tuple)
+            logger.info(f"Tracker añadido: {host}:{port}")
+
     
     
     # ==================== Métodos Asíncronos (core) ====================
@@ -81,6 +101,7 @@ class TrackerManager:
                 )
                 
                 if success:
+                    self._current_tracker = (tracker_host, tracker_port)
                     logger.info(f"Torrent {torrent_hash[:8]} registrado en {tracker_host}:{tracker_port}")
                     return True
             except Exception as e:
@@ -108,6 +129,7 @@ class TrackerManager:
                 )
                 
                 if peers:
+                    self._current_tracker = (tracker_host, tracker_port)
                     logger.info(f"Obtenidos {len(peers)} peers de {tracker_host}:{tracker_port}")
                     return peers
             except Exception as e:
@@ -148,6 +170,7 @@ class TrackerManager:
                 left=left,
             )
             
+            self._current_tracker = (tracker_host, tracker_port)
             logger.info(f"Announce exitoso para {info_hash[:8]}")
         except Exception as e:
             logger.error(f"Error en announce: {e}")
