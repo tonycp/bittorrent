@@ -17,9 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 class ClientService(BitService, ABC):
-    def __init__(self, **kwargs):
+    def __init__(self, loop: Optional[asyncio.AbstractEventLoop] = None, **kwargs):
         super().__init__(**kwargs)
-        self.loop = asyncio.get_event_loop()
+        # Usar el loop proporcionado si está disponible, sino obtener el actual
+        self.loop = loop or asyncio.get_event_loop()
         self._pending_by_proto: Dict[MProtocol, Dict[str, Future]] = {}
 
     async def _on_connect(self, protocol: MProtocol):

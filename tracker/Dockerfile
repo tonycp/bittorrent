@@ -8,5 +8,4 @@ COPY src/__init__.py ./src
 RUN uv sync --no-managed-python
 
 # Run sync with extras (bit_lib) on container start, then run the app
-ENTRYPOINT ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python"]
-CMD ["uv", "run", "app"]
+ENTRYPOINT ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run app"]

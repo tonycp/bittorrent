@@ -43,6 +43,9 @@ class ConfigManager:
             MAX_DL_RATE: "0",
             MAX_UL_RATE: "0",
             MAX_CON: "50",
+            "tracker_health_interval": "30",
+            "tracker_discovery_interval": "60",
+            "tracker_discovery_enabled": "true",
         }
         
         # Forzar valores correctos incluso si el archivo existe

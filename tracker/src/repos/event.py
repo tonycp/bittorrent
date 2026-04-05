@@ -76,11 +76,12 @@ class EventLogRepository(SQLAlchemyAsyncRepository[EventTable]):
         event = await self.get(event_id)
         if not event:
             return None
-        
-        if event.replicated_to is None:
-            event.replicated_to = {}
-        
-        event.replicated_to[tracker_id] = True
+
+        replicated_to = dict(event.replicated_to or {})
+        replicated_to[tracker_id] = True
+        event.replicated_to = replicated_to
+
+        await self.session.flush()
         return await self.update(event)
 
     async def get_pending_replication_for_tracker(
@@ -104,12 +105,9 @@ class EventLogRepository(SQLAlchemyAsyncRepository[EventTable]):
         
         # Filtrar eventos que ya fueron replicados
         if target_tracker_id == "*":
-            # Para "*", devuelve eventos que aún no tienen ninguna replicación
-            # O que tienen replicated_to vacío
-            pending = [
-                event for event in all_events
-                if not event.replicated_to or not any(event.replicated_to.values())
-            ]
+            # Para "*", devolver todos y dejar que ReplicationService
+            # decida por tracker activo/replicated_to.
+            pending = all_events
         else:
             # Para un tracker específico, filtrar los que ya fueron replicados a ese tracker
             pending = [

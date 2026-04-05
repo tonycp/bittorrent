@@ -53,6 +53,7 @@ class HandlerContainer(DeclarativeContainer):
     event_hdl = Singleton(
         event.EventHandler,
         event_repo=repo.event_log_repo,
+        replica_assignment_repo=repo.replica_assignment_repo,
     )
     replication_hdl = Singleton(
         replication.ReplicationHandler,

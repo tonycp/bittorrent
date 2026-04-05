@@ -7,6 +7,7 @@ from .entity import Entity
 
 
 class Peer(Entity):
+    peer_id: str = Field(alias="peer_identifier")
     ip: str
     port: int
 
@@ -32,6 +33,8 @@ class Torrent(Entity):
 
     size: int
     chunks: int
+    piece_length: int
+    peer_ids: list[str] = Field(default_factory=list)
 
 
 class TorrentPeer(Entity):

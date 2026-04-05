@@ -222,6 +222,12 @@ class ReplicationService(UniqueService, ClientService):
 
         # Excluir el tracker local de los posibles destinos
         active_trackers = [t for t in active_trackers if t.tracker_id != self.tracker_id]
+
+        # Dedupe por tracker_id para evitar targets duplicados por entradas stale en cache
+        unique_trackers: dict[str, TrackerState] = {}
+        for tracker in active_trackers:
+            unique_trackers[tracker.tracker_id] = tracker
+        active_trackers = list(unique_trackers.values())
         
         if not active_trackers:
             return []
@@ -263,6 +269,169 @@ class ReplicationService(UniqueService, ClientService):
 
         return targets
 
+    def _ordered_candidates_by_hash(
+        self, candidates: list[TrackerState], torrent_hash: str
+    ) -> list[TrackerState]:
+        """Devuelve candidatos en orden determinístico circular según hash del torrent."""
+        if not candidates:
+            return []
+
+        sorted_trackers = sorted(candidates, key=lambda t: t.tracker_id)
+        n = len(sorted_trackers)
+
+        hash_bytes = hashlib.md5(torrent_hash.encode()).digest()
+        hash_int = int.from_bytes(hash_bytes, byteorder="big", signed=False)
+        start_idx = hash_int % n
+
+        return [sorted_trackers[(start_idx + i) % n] for i in range(n)]
+
+    async def _is_tracker_reachable(self, tracker: TrackerState) -> bool:
+        try:
+            ok, _, _ = await self.cluster_service.heartbeat_tracker(tracker.tracker_id)
+            if ok:
+                return True
+        except Exception:
+            pass
+
+        try:
+            req = Request(
+                controller="Cluster",
+                command="update",
+                func="heartbeat",
+                args={
+                    "tracker_id": self.tracker_id,
+                    "query_count": self.cluster_service.cluster_state.query_count,
+                    "vector_clock": self.cluster_service.cluster_state.vector_clock,
+                },
+            )
+            response = await self.request(
+                tracker.host,
+                tracker.port,
+                req,
+                timeout=self.settings.timeout,
+            )
+            if response:
+                return True
+        except Exception:
+            pass
+
+        await self._invalidate_tracker_cache(tracker)
+        logger.debug(
+            f"[{self.tracker_id}] Skipping unreachable replica target {tracker.tracker_id}"
+        )
+        return False
+
+    async def _get_pinned_replica_target_ids(self, torrent_hash: str) -> set[str]:
+        if not self.event_handler:
+            return set()
+
+        repo = getattr(self.event_handler, "replica_assignment_repo", None)
+        if not repo:
+            return set()
+
+        try:
+            assignment = await repo.get_by_torrent_hash(torrent_hash)
+            if not assignment:
+                return set()
+
+            values = assignment.replica_set or []
+            if not isinstance(values, list):
+                return set()
+
+            return {tracker_id for tracker_id in values if isinstance(tracker_id, str)}
+        except Exception as exc:
+            logger.debug(
+                f"[{self.tracker_id}] Could not read pinned replicas for {torrent_hash[:8]}: {exc}"
+            )
+            return set()
+
+    async def _persist_pinned_replica_targets(
+        self, torrent_hash: str, target_trackers: list[TrackerState]
+    ) -> None:
+        if not self.event_handler:
+            return
+
+        repo = getattr(self.event_handler, "replica_assignment_repo", None)
+        if not repo:
+            return
+
+        try:
+            ordered_target_ids = [tracker.tracker_id for tracker in target_trackers]
+            await repo.upsert_replica_set(torrent_hash, ordered_target_ids)
+        except Exception as exc:
+            logger.warning(
+                f"[{self.tracker_id}] Could not persist pinned replicas for {torrent_hash[:8]}: {exc}"
+            )
+
+    async def _select_reachable_replica_targets(self, torrent_hash: str) -> list[TrackerState]:
+        """
+        Selecciona destinos estables de réplica para un torrent.
+
+        Política:
+        - Mantener el replica_set ya asignado mientras siga alcanzable.
+        - Reemplazar solo réplicas caídas (failover).
+        - Persistir el nuevo replica_set tras failover para evitar rebalanceo al reingreso.
+        """
+        active_trackers = self.cluster_service.get_active_trackers()
+        if not active_trackers:
+            return []
+
+        candidates = [t for t in active_trackers if t.tracker_id != self.tracker_id]
+        unique_candidates: dict[str, TrackerState] = {
+            tracker.tracker_id: tracker for tracker in candidates
+        }
+        candidates = list(unique_candidates.values())
+
+        if not candidates:
+            return []
+
+        replica_count = min(self._min_replicas - 1, len(candidates))
+        ordered_candidates = self._ordered_candidates_by_hash(candidates, torrent_hash)
+
+        pinned_ids = await self._get_pinned_replica_target_ids(torrent_hash)
+        selected: list[TrackerState] = []
+        selected_ids: set[str] = set()
+
+        # 1) Priorizar réplicas previamente fijadas
+        for tracker in ordered_candidates:
+            if len(selected) >= replica_count:
+                break
+            if tracker.tracker_id not in pinned_ids:
+                continue
+            if await self._is_tracker_reachable(tracker):
+                selected.append(tracker)
+                selected_ids.add(tracker.tracker_id)
+
+        # 2) Completar con candidatos del anillo (failover/bootstrap)
+        for tracker in ordered_candidates:
+            if len(selected) >= replica_count:
+                break
+            if tracker.tracker_id in selected_ids:
+                continue
+            if await self._is_tracker_reachable(tracker):
+                selected.append(tracker)
+                selected_ids.add(tracker.tracker_id)
+
+        # Persistir si cambió el replica_set efectivo
+        if selected and selected_ids != pinned_ids:
+            await self._persist_pinned_replica_targets(torrent_hash, selected)
+
+        return selected
+
+    def _get_replicated_targets(self, event_dict: dict) -> set[str]:
+        replicated_to = event_dict.get("replicated_to") or {}
+        if not isinstance(replicated_to, dict):
+            return set()
+        return {tracker_id for tracker_id, replicated in replicated_to.items() if replicated}
+
+    async def _invalidate_tracker_cache(self, tracker: TrackerState):
+        try:
+            await self.cluster_service.cluster_state.cache.invalidate(tracker.host)
+        except Exception as exc:
+            logger.debug(
+                f"[{self.tracker_id}] Could not invalidate cache for {tracker.tracker_id}: {exc}"
+            )
+
     async def _replicate_events_to_tracker(
         self, tracker: TrackerState, events_data: list[dict]
     ) -> bool:
@@ -290,36 +459,81 @@ class ReplicationService(UniqueService, ClientService):
             logger.debug(f"[{self.tracker_id}] Replication response from {tracker.tracker_id}: {response}")
             
             if response and response.data:
+                payload = response.data
+                if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+                    payload = payload["data"]
+
+                applied_event_ids = set()
+                if isinstance(payload, dict):
+                    raw_ids = payload.get("applied_event_ids") or []
+                    applied_event_ids = {str(event_id) for event_id in raw_ids if event_id is not None}
+
                 # Marcar eventos como replicados al tracker destino
                 if self.event_handler:
                     for event_data in events_data:
                         event_id = event_data.get("id")
-                        if event_id:
+                        event_id_str = str(event_id) if event_id is not None else None
+                        if event_id_str and event_id_str in applied_event_ids:
                             try:
-                                await self.event_handler.event_repo.mark_replicated(event_id, tracker.tracker_id)
-                                logger.debug(f"[{self.tracker_id}] Marked event {event_id} as replicated to {tracker.tracker_id}")
+                                await self.event_handler.event_repo.mark_replicated(event_id_str, tracker.tracker_id)
+                                logger.debug(f"[{self.tracker_id}] Marked event {event_id_str} as replicated to {tracker.tracker_id}")
                             except Exception as e:
-                                logger.warning(f"[{self.tracker_id}] Failed to mark event {event_id} as replicated: {e}")
+                                logger.warning(f"[{self.tracker_id}] Failed to mark event {event_id_str} as replicated: {e}")
                 
                 logger.debug(
-                    f"[{self.tracker_id}] Replicated {len(events_data)} events to {tracker.tracker_id}"
+                    f"[{self.tracker_id}] Replicated {len(applied_event_ids)} events to {tracker.tracker_id}"
                 )
                 return True
 
             logger.warning(f"[{self.tracker_id}] Empty or no response from {tracker.tracker_id}")
+            await self._invalidate_tracker_cache(tracker)
             return False
 
         except asyncio.TimeoutError as e:
             logger.warning(
                 f"[{self.tracker_id}] Timeout replicating to {tracker.tracker_id}: {e}"
             )
+            await self._invalidate_tracker_cache(tracker)
             return False
         except Exception as e:
             logger.error(
                 f"[{self.tracker_id}] Exception replicating to {tracker.tracker_id}: {type(e).__name__}: {e}",
                 exc_info=True
             )
+            await self._invalidate_tracker_cache(tracker)
             return False
+
+    async def _build_snapshot_payload(self) -> Optional[bytes]:
+        """Construye snapshot JSON usando el endpoint request_snapshot local."""
+        try:
+            req = Request(
+                controller="Replication",
+                command="get",
+                func="request_snapshot",
+                args={"tracker_id": self.tracker_id},
+            )
+
+            response = await self.request(
+                "localhost",
+                self.port,
+                req,
+                timeout=self.settings.timeout,
+            )
+
+            if not response or not response.data:
+                return None
+
+            payload = response.data
+            if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+                payload = payload["data"]
+
+            if not isinstance(payload, dict):
+                return None
+
+            return json.dumps(payload, default=str).encode("utf-8")
+        except Exception as e:
+            logger.error(f"[{self.tracker_id}] Error building snapshot payload: {e}")
+            return None
 
     async def _send_snapshot_to_tracker(
         self, tracker: TrackerState, snapshot_data: bytes, snapshot_id: str
@@ -486,8 +700,18 @@ class ReplicationService(UniqueService, ClientService):
                         f"[{self.tracker_id}] Sending snapshot to {new_tracker_id} "
                         f"({len(events_data)} events > threshold {self._snapshot_threshold})"
                     )
-                    # TODO: Implementar envío de snapshot
-                    # await self._send_snapshot_to_tracker(new_tracker)
+                    snapshot_data = await self._build_snapshot_payload()
+                    if snapshot_data:
+                        snapshot_id = hashlib.md5(snapshot_data).hexdigest()
+                        await self._send_snapshot_to_tracker(
+                            tracker=new_tracker,
+                            snapshot_data=snapshot_data,
+                            snapshot_id=snapshot_id,
+                        )
+                    else:
+                        logger.warning(
+                            f"[{self.tracker_id}] Snapshot payload vacío, fallback a eventos"
+                        )
                 else:
                     logger.info(
                         f"[{self.tracker_id}] Sending {len(events_data)} events to {new_tracker_id} "
@@ -500,7 +724,7 @@ class ReplicationService(UniqueService, ClientService):
         # Para cada torrent, seleccionar réplicas y enviar eventos
         for torrent_hash, torrent_events in events_by_torrent.items():
             # Seleccionar trackers destino (máximo min_replicas)
-            target_trackers = self._select_replica_targets(torrent_hash)
+            target_trackers = await self._select_reachable_replica_targets(torrent_hash)
             
             logger.info(
                 f"[{self.tracker_id}] Torrent {torrent_hash[:8]}: "
@@ -510,12 +734,20 @@ class ReplicationService(UniqueService, ClientService):
 
             for tracker in target_trackers:
                 try:
-                    # Enviar solo los eventos de este torrent al tracker destino
-                    success = await self._replicate_events_to_tracker(tracker, torrent_events)
+                    # Enviar solo eventos que aún no fueron replicados a este tracker
+                    tracker_events = [
+                        event for event in torrent_events
+                        if tracker.tracker_id not in self._get_replicated_targets(event)
+                    ]
+
+                    if not tracker_events:
+                        continue
+
+                    success = await self._replicate_events_to_tracker(tracker, tracker_events)
 
                     if success:
                         logger.info(
-                            f"[{self.tracker_id}] Successfully replicated {len(torrent_events)} events "
+                            f"[{self.tracker_id}] Successfully replicated {len(tracker_events)} events "
                             f"(torrent {torrent_hash[:8]}) to {tracker.tracker_id}"
                         )
                     else:

@@ -11,6 +11,8 @@ import humanize
 import asyncio
 import socket
 import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, asdict
@@ -44,6 +46,11 @@ class TorrentInfo:
     chunks_info: List[ChunkInfo] = None
     is_seeding: bool = False  # True si tenemos el archivo completo
     downloaded_chunks: int = 0  # Chunks descargados
+    state: str = "queued"
+    peers_total: int = 0
+    download_rate: float = 0.0  # KB/s
+    upload_rate: float = 0.0  # KB/s
+    eta_seconds: Optional[float] = None
     
     def __post_init__(self):
         """Inicializar chunks_info si es None"""
@@ -111,9 +118,11 @@ class TorrentStatus:
     downloaded_size: float
     progress: float
     total_chunks: float
+    state: str = "queued"
     peers: int = 0
     download_rate: float = 0.0
     upload_rate: float = 0.0
+    eta_seconds: Optional[float] = None
 
 
 class TorrentClient:
@@ -134,8 +143,10 @@ class TorrentClient:
         # TrackerManager para announce/get_peers
         self.tracker_manager = TrackerManager(config_manager)
         
-        # Peer ID único para este cliente
-        self.peer_id = f"peer-{socket.gethostname()}-{os.getpid()}"
+        # Peer ID realmente único para evitar colisiones entre contenedores
+        listen_port = config_manager.get_listen_port()
+        unique_suffix = uuid.uuid4().hex[:10]
+        self.peer_id = f"peer-{socket.gethostname()}-{listen_port}-{unique_suffix}"
         
         # Estado
         self._initialized = False
@@ -144,6 +155,9 @@ class TorrentClient:
         # Event loop persistente en thread separado (debe crearse ANTES de PeerService)
         self._loop = None
         self._loop_thread = None
+        self._loop_ready = threading.Event()
+        self._peer_server_future = None
+        self._download_tasks: Dict[str, Any] = {}
         self._start_event_loop_thread()
         
         # PeerService para transferencia P2P de chunks (usa el loop creado)
@@ -155,6 +169,8 @@ class TorrentClient:
             host="0.0.0.0",
             port=listen_port
         )
+
+        self._last_upload_sample_ts = time.time()
         
         # Asegurar que existan los directorios
         self._ensure_directories()
@@ -164,30 +180,33 @@ class TorrentClient:
         def run_loop():
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
+            self._loop_ready.set()
             self._loop.run_forever()
         
         self._loop_thread = threading.Thread(target=run_loop, daemon=True)
         self._loop_thread.start()
-        
-        # Esperar a que el loop esté listo
-        import time
-        time.sleep(0.1)
+
+        if not self._loop_ready.wait(timeout=2):
+            logger.error("No se pudo inicializar el event loop del cliente")
     
     def _run_async_in_thread(self, coro):
         """Ejecuta corutina en el event loop del thread"""
         if not self._loop or not self._loop.is_running():
             logger.error("Event loop no está corriendo")
-            return
+            return None
         
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         # Agregar callback para capturar excepciones
         def handle_result(fut):
             try:
                 fut.result()
+            except asyncio.CancelledError:
+                logger.debug("Operación async cancelada")
             except Exception as e:
                 logger.error(f"Error en operación async: {e}", exc_info=True)
         
         future.add_done_callback(handle_result)
+        return future
     
     def _ensure_directories(self):
         """Crea directorios necesarios si no existen"""
@@ -207,7 +226,7 @@ class TorrentClient:
         
         # Iniciar servidor P2P para servir chunks
         if not self._peer_server_started:
-            self._run_async_in_thread(self._start_peer_server())
+            self._peer_server_future = self._run_async_in_thread(self._start_peer_server())
             self._peer_server_started = True
         
         logger.info("Sesión de torrent iniciada")
@@ -220,6 +239,18 @@ class TorrentClient:
         """Añade un torrent para descargar"""
         logger.info(f"[ADD_TORRENT] Agregando torrent: {torrent_info.file_name}")
         logger.info(f"[ADD_TORRENT] TorrentInfo recibido - file_size: {torrent_info.file_size}, total_chunks: {torrent_info.total_chunks}")
+
+        # Añadir tracker específico del .p2p a la lista conocida (si existe)
+        if torrent_info.tracker_address and ":" in torrent_info.tracker_address:
+            try:
+                tracker_host, tracker_port_str = torrent_info.tracker_address.rsplit(":", 1)
+                tracker_host = tracker_host.strip()
+                tracker_port = int(tracker_port_str)
+                if tracker_host and 1 <= tracker_port <= 65535:
+                    self.tracker_manager.prefer_tracker(tracker_host, tracker_port)
+                    logger.info(f"[ADD_TORRENT] Tracker del torrent preferido: {tracker_host}:{tracker_port}")
+            except Exception as e:
+                logger.warning(f"[ADD_TORRENT] Tracker address inválido '{torrent_info.tracker_address}': {e}")
         
         if not self._initialized:
             self.setup_session()
@@ -242,7 +273,8 @@ class TorrentClient:
                 # Ya tenemos el archivo completo
                 torrent_info.is_seeding = True
                 torrent_info.downloaded_chunks = torrent_info.total_chunks
-                logger.info(f"[ADD_TORRENT] ✓ Hash coincide - marcando como completo (seeding)")
+                torrent_info.state = "seeding"
+                logger.info("[ADD_TORRENT] ✓ Hash coincide - marcando como completo (seeding)")
                 
                 # Registrar archivo para seeding P2P
                 self.peer_service.register_file(torrent_info.file_hash, file_path)
@@ -250,11 +282,13 @@ class TorrentClient:
                 logger.warning(f"[ADD_TORRENT] ✗ Hash NO coincide para {torrent_info.file_name}")
                 torrent_info.is_seeding = False
                 torrent_info.downloaded_chunks = 0
+                torrent_info.state = "queued"
         else:
             # Archivo no existe, se debe descargar
             torrent_info.is_seeding = False
             torrent_info.downloaded_chunks = 0
-            logger.info(f"[ADD_TORRENT] Archivo NO existe - se debe descargar")
+            torrent_info.state = "queued"
+            logger.info("[ADD_TORRENT] Archivo NO existe - se debe descargar")
         
         self._torrents[torrent_info.file_hash] = torrent_info
         logger.info(f"[ADD_TORRENT] Estado final - is_seeding: {torrent_info.is_seeding}, downloaded_chunks: {torrent_info.downloaded_chunks}/{torrent_info.total_chunks}")
@@ -265,7 +299,7 @@ class TorrentClient:
         # Auto-iniciar descarga si el archivo no está completo
         if not torrent_info.is_seeding:
             logger.info(f"[ADD_TORRENT] Auto-iniciando descarga de {torrent_info.file_name}")
-            self._run_async_in_thread(self._download_torrent(torrent_info.file_hash))
+            self._start_download_task(torrent_info.file_hash)
         
         return torrent_info.file_hash
     
@@ -287,7 +321,19 @@ class TorrentClient:
             logger.error(f"[ANNOUNCE] Error: {e}", exc_info=True)
     
     def pause_torrent(self, torrent_handle: str):
-        """Pausa un torrent (placeholder)"""
+        """Pausa un torrent"""
+        torrent_info = self._torrents.get(torrent_handle)
+        if not torrent_info:
+            logger.error(f"Torrent {torrent_handle[:8]} no encontrado")
+            return
+
+        future = self._download_tasks.get(torrent_handle)
+        if future and not future.done():
+            future.cancel()
+
+        torrent_info.state = "paused"
+        torrent_info.download_rate = 0.0
+        torrent_info.eta_seconds = None
         logger.info(f"Pausa de torrent: {torrent_handle[:8]}")
     
     def resume_torrent(self, torrent_handle: str):
@@ -307,31 +353,113 @@ class TorrentClient:
         
         # Iniciar descarga en el event loop
         logger.info(f"[RESUME] Iniciando descarga de {torrent_info.file_name}")
-        self._run_async_in_thread(self._download_torrent(torrent_handle))
-        
-        if torrent_handle not in self._torrents:
-            logger.error(f"Torrent {torrent_handle[:8]} no encontrado")
+        torrent_info.state = "downloading"
+        self._start_download_task(torrent_handle)
+
+    def _start_download_task(self, torrent_hash: str):
+        """Inicia descarga si no hay tarea activa para el torrent"""
+        current = self._download_tasks.get(torrent_hash)
+        if current and not current.done():
+            logger.debug(f"[DOWNLOAD] Ya existe tarea activa para {torrent_hash[:8]}")
             return
-        
-        torrent_info = self._torrents[torrent_handle]
-        
-        # Si ya está completo, no hacer nada
-        if torrent_info.is_seeding:
-            logger.info(f"Torrent {torrent_handle[:8]} ya está completo (seeding)")
-            return
-        
-        # Iniciar descarga en el event loop
-        self._run_async_in_thread(self._download_torrent(torrent_handle))
+
+        future = self._run_async_in_thread(self._download_torrent(torrent_hash))
+        if future:
+            self._download_tasks[torrent_hash] = future
     
     def remove_torrent(self, torrent_handle: str):
         """Elimina un torrent"""
+        task = self._download_tasks.pop(torrent_handle, None)
+        if task and not task.done():
+            task.cancel()
+
         if torrent_handle in self._torrents:
             del self._torrents[torrent_handle]
             logger.info(f"Torrent eliminado: {torrent_handle[:8]}")
     
     def get_all_torrents(self) -> List[str]:
         """Obtiene lista de handles de todos los torrents"""
+        self._refresh_upload_rates()
         return list(self._torrents.keys())
+
+    def _refresh_upload_rates(self) -> None:
+        """Actualiza upload_rate (KB/s) a partir de chunks servidos por PeerService."""
+        now = time.time()
+        elapsed = max(now - self._last_upload_sample_ts, 0.001)
+        self._last_upload_sample_ts = now
+
+        uploaded_by_torrent = self.peer_service.consume_uploaded_bytes_by_torrent()
+        requester_counts = self.peer_service.get_active_requester_counts_by_torrent()
+
+        for torrent in self._torrents.values():
+            torrent.upload_rate = 0.0
+
+        for torrent_hash, torrent in self._torrents.items():
+            requester_count = requester_counts.get(torrent_hash, 0)
+            if torrent.is_seeding:
+                torrent.peers_total = requester_count
+                if requester_count > 0:
+                    logger.debug(f"[STATS] Seeder {torrent.file_name}: {requester_count} active peers requesting chunks")
+            elif requester_count > 0:
+                torrent.peers_total = max(torrent.peers_total, requester_count)
+                logger.debug(f"[STATS] Downloader {torrent.file_name}: {requester_count} active requesters, {torrent.peers_total} total peers")
+
+            uploaded_bytes = uploaded_by_torrent.get(torrent_hash, 0)
+            if uploaded_bytes > 0:
+                torrent.upload_rate = (uploaded_bytes / elapsed) / 1024
+
+    def _filter_self_from_peers(self, peers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Elimina este cliente de la lista de peers para evitar auto-conexiones."""
+        listen_port = self.config.get_listen_port()
+        local_ips = {"127.0.0.1", "localhost", "0.0.0.0"}
+        try:
+            resolved = socket.gethostbyname(socket.gethostname())
+            if resolved and not resolved.startswith("127.") and resolved != "0.0.0.0":
+                local_ips.add(resolved)
+        except Exception:
+            pass
+
+        try:
+            announced_ip = self.tracker_manager._get_client_ip()
+            if announced_ip and not announced_ip.startswith("127.") and announced_ip != "0.0.0.0":
+                local_ips.add(announced_ip)
+        except Exception:
+            pass
+
+        filtered: List[Dict[str, Any]] = []
+        removed_by_endpoint = 0
+        kept_same_peer_id = 0
+        for peer in peers:
+            peer_id = peer.get("peer_id")
+            peer_ip = str(peer.get("ip", "")).strip()
+            peer_port = peer.get("port")
+
+            is_same_peer_id = bool(peer_id) and peer_id == self.peer_id
+            is_local_endpoint = (
+                isinstance(peer_port, int)
+                and peer_port == listen_port
+                and peer_ip in local_ips
+            )
+
+            # Filtrar SOLO por endpoint local real.
+            # No filtrar solo por peer_id para evitar falsos positivos por colisiones/bugs de tracker.
+            if is_local_endpoint:
+                removed_by_endpoint += 1
+                continue
+
+            if is_same_peer_id:
+                kept_same_peer_id += 1
+
+            filtered.append(peer)
+
+        if peers and (removed_by_endpoint > 0 or kept_same_peer_id > 0):
+            logger.info(
+                f"[PEERS] Filtrados endpoint local={removed_by_endpoint}, "
+                f"peer_id_igual_conservados={kept_same_peer_id}, "
+                f"recibidos={len(peers)}, quedan={len(filtered)}"
+            )
+
+        return filtered
     
     def get_status(self, torrent_handle: str) -> TorrentStatus:
         """Obtiene estado de un torrent"""
@@ -344,6 +472,7 @@ class TorrentClient:
                 downloaded_size=0,
                 progress=0,
                 total_chunks=0,
+                state="error",
             )
         
         logger.debug(f"[GET_STATUS] Torrent: {torrent.file_name}")
@@ -368,7 +497,11 @@ class TorrentClient:
             downloaded_size=downloaded_bytes,  # Bytes
             progress=progress,
             total_chunks=torrent.total_chunks,
-            peers=0,
+            state=torrent.state,
+            peers=torrent.peers_total,
+            download_rate=torrent.download_rate,
+            upload_rate=torrent.upload_rate,
+            eta_seconds=torrent.eta_seconds,
         )
     
     def create_torrent_file(self, file_path: str, address: Tuple[str, int]) -> Tuple[str, TorrentInfo]:
@@ -425,6 +558,7 @@ class TorrentClient:
             chunks_info=chunks_info,
             is_seeding=True,  # Tenemos el archivo completo
             downloaded_chunks=total_chunks,  # Todos los chunks disponibles
+            state="seeding",
         )
         
         # Guardar archivo .p2p
@@ -565,15 +699,31 @@ class TorrentClient:
             if not torrent_info:
                 logger.error(f"Torrent {torrent_hash[:8]} no encontrado")
                 return
+
+            torrent_info.state = "downloading"
+            torrent_info.eta_seconds = None
             
             logger.info(f"[DOWNLOAD] Iniciando descarga de {torrent_info.file_name}")
+
+            # Priorizar tracker del .p2p para este torrent
+            if torrent_info.tracker_address and ":" in torrent_info.tracker_address:
+                try:
+                    tracker_host, tracker_port_str = torrent_info.tracker_address.rsplit(":", 1)
+                    tracker_host = tracker_host.strip()
+                    tracker_port = int(tracker_port_str)
+                    if tracker_host and 1 <= tracker_port <= 65535:
+                        self.tracker_manager.prefer_tracker(tracker_host, tracker_port)
+                except Exception:
+                    pass
             
             # 1. Obtener peers del tracker
             peers = await self.tracker_manager.get_peers_async(torrent_hash)
+            peers = self._filter_self_from_peers(peers)
+            torrent_info.peers_total = len(peers)
             
             if not peers:
-                logger.warning(f"[DOWNLOAD] No hay peers disponibles para {torrent_hash[:8]}")
-                return
+                torrent_info.state = "stalled"
+                logger.warning(f"[DOWNLOAD] No hay peers iniciales para {torrent_hash[:8]} - se seguirá intentando")
             
             logger.info(f"[DOWNLOAD] {len(peers)} peers disponibles")
             
@@ -600,64 +750,205 @@ class TorrentClient:
             # Esto permite que otros peers descarguen de nosotros DURANTE la descarga
             self.peer_service.register_file(torrent_hash, file_path)
             
-            # 4. Descargar chunks
+            # 4. Descargar chunks en paralelo
+            initial_downloaded_chunks = torrent_info.downloaded_chunks
             downloaded = 0
+            session_downloaded_bytes = 0
             last_announce_time = 0
             ANNOUNCE_INTERVAL = 30  # Anunciar cada 30 segundos
             ANNOUNCE_CHUNK_INTERVAL = 5  # O cada 5 chunks
             
             import time
             
-            for chunk_idx in missing_chunks:
-                # Distribuir chunks entre peers (round-robin)
-                peer = peers[chunk_idx % len(peers)]
-                peer_ip = peer.get('ip')
-                peer_port = peer.get('port')
-                
-                if not peer_ip or not peer_port:
-                    continue
-                
-                logger.debug(f"[DOWNLOAD] Descargando chunk {chunk_idx} de {peer_ip}:{peer_port}")
-                
-                # Solicitar chunk
-                chunk_data = await self.peer_service.request_chunk(
-                    peer_host=peer_ip,
-                    peer_port=peer_port,
-                    torrent_hash=torrent_hash,
-                    chunk_index=chunk_idx,
-                    timeout=30.0
-                )
-                
-                if chunk_data:
-                    # Escribir chunk al archivo
-                    await self._write_chunk(file_path, chunk_idx, chunk_data, torrent_info.chunk_size)
-                    downloaded += 1
-                    
-                    # Actualizar progreso interno
-                    torrent_info.downloaded_chunks = downloaded
-                    
-                    logger.info(
-                        f"[DOWNLOAD] Chunk {chunk_idx} descargado "
-                        f"({downloaded}/{len(missing_chunks)}) - "
-                        f"{(downloaded/len(missing_chunks)*100):.1f}%"
+            start_time = time.time()
+            failed_peers = {}  # Track peers con fallos: {(ip, port): failure_count}
+            pending_chunks = asyncio.Queue()  # ✅ Cambiar a Queue para workers persistentes
+            
+            # Añadir chunks iniciales
+            for idx in missing_chunks:
+                await pending_chunks.put(idx)
+            
+            stats_lock = threading.Lock()
+            
+            MAX_PARALLEL_DOWNLOADS = 4  # Descargar max 4 chunks en paralelo
+            MAX_PEER_FAILURES = 5  # Remover peer después de N fallos
+            last_peers_check = time.time()
+            consecutive_no_progress = 0
+            MAX_NO_PROGRESS_CYCLES = 30
+            PEERS_CHECK_INTERVAL_WITH_PEERS = 20
+            PEERS_CHECK_INTERVAL_NO_PEERS = 3
+            download_complete = False
+            
+            async def check_peer_alive(peer_ip: str, peer_port: int, timeout: float = 5.0) -> bool:
+                """Valida si un peer está respondiendo con un test simple"""
+                try:
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(peer_ip, peer_port),
+                        timeout=timeout
                     )
+                    writer.close()
+                    await writer.wait_closed()
+                    return True
+                except Exception as e:
+                    logger.debug(f"[HEALTH] Peer {peer_ip}:{peer_port} no responde: {str(e)[:40]}")
+                    return False
+            
+            async def download_chunk_worker(worker_id: int):
+                """Worker que descarga chunks de forma paralela - loop persistente"""
+                nonlocal downloaded, session_downloaded_bytes, consecutive_no_progress, download_complete, peers
+                
+                peer_idx = worker_id % len(peers) if peers else 0  # Distribución de peers
+                
+                while not download_complete:
+                    try:
+                        # Esperar chunk con timeout para permitir shutdown
+                        chunk_idx = await asyncio.wait_for(
+                            pending_chunks.get(),
+                            timeout=2.0
+                        )
+                        
+                        # Sentinela para shutdown (None)
+                        if chunk_idx is None:
+                            break
+                        
+                    except asyncio.TimeoutError:
+                        # Sin chunks disponibles - esperar a que haya peers
+                        if not peers:
+                            logger.debug(f"[DOWNLOAD] Worker {worker_id} en espera - sin peers disponibles")
+                            await asyncio.sleep(2)
+                        continue
                     
-                    # Anunciar progreso periódicamente al tracker
+                    chunk_downloaded = False
+                    attempts = 0
+                    
+                    # Intentar con diferentes peers en rotación
+                    if not peers:
+                        await pending_chunks.put(chunk_idx)
+                        await asyncio.sleep(1)
+                        continue
+                    
+                    peers_count = len(peers)
+                    
+                    while attempts < peers_count and not chunk_downloaded:
+                        # ✅ Rotar por peers: cada worker intenta con un peer diferente
+                        current_peer_idx = (peer_idx + attempts) % peers_count
+                        if current_peer_idx >= len(peers):
+                            break
+                            
+                        peer = peers[current_peer_idx]
+                        peer_ip = peer.get('ip')
+                        peer_port = peer.get('port')
+                        peer_key = (peer_ip, peer_port)
+                        
+                        if not peer_ip or not peer_port:
+                            attempts += 1
+                            continue
+                        
+                        logger.debug(f"[DOWNLOAD] Worker {worker_id}: chunk {chunk_idx} desde {peer_ip}:{peer_port}")
+                        
+                        try:
+                            # ✅ Validar que peer está vivo ANTES de intentar
+                            if not await check_peer_alive(peer_ip, peer_port, timeout=3.0):
+                                logger.debug(f"[DOWNLOAD] Peer {peer_ip}:{peer_port} no responde")
+                                failed_peers[peer_key] = failed_peers.get(peer_key, 0) + 1
+                                attempts += 1
+                                continue
+                            
+                            # Intentar descargar chunk
+                            chunk_data = await self.peer_service.request_chunk(
+                                peer_host=peer_ip,
+                                peer_port=peer_port,
+                                torrent_hash=torrent_hash,
+                                chunk_index=chunk_idx,
+                                timeout=20.0
+                            )
+                            
+                            if chunk_data:
+                                # ✅ Éxito
+                                await self._write_chunk(file_path, chunk_idx, chunk_data, torrent_info.chunk_size)
+                                
+                                with stats_lock:
+                                    downloaded += 1
+                                    session_downloaded_bytes += len(chunk_data)
+                                    consecutive_no_progress = 0
+                                
+                                # Reducir fallos (peer funciona bien)
+                                failed_peers[peer_key] = max(0, failed_peers.get(peer_key, 0) - 1)
+                                chunk_downloaded = True
+                                
+                                logger.debug(
+                                    f"[DOWNLOAD] ✅ Worker {worker_id}: chunk {chunk_idx} de {peer_ip}:{peer_port}"
+                                )
+                                break
+                        except Exception as e:
+                            logger.debug(f"[DOWNLOAD] Worker {worker_id}: {peer_ip}:{peer_port} error: {str(e)[:40]}")
+                            failed_peers[peer_key] = failed_peers.get(peer_key, 0) + 1
+                            attempts += 1
+                    
+                    # Remover peers que fallan demasiado
+                    peers = [
+                        p for p in peers
+                        if failed_peers.get((p.get('ip'), p.get('port')), 0) < MAX_PEER_FAILURES
+                    ]
+                    
+                    # Si no se descargó, devolver a cola
+                    if not chunk_downloaded:
+                        with stats_lock:
+                            consecutive_no_progress += 1
+                        
+                        if peers:
+                            await pending_chunks.put(chunk_idx)
+                        else:
+                            # Sin peers, esperar
+                            await pending_chunks.put(chunk_idx)
+                            await asyncio.sleep(2)
+            
+            async def monitor_and_download():
+                """Monitorea el progreso y gestiona workers"""
+                nonlocal consecutive_no_progress, downloaded, session_downloaded_bytes, last_peers_check, last_announce_time, peers, download_complete
+                
+                # Crear tasks de workers
+                worker_tasks = [
+                    asyncio.create_task(download_chunk_worker(i))
+                    for i in range(MAX_PARALLEL_DOWNLOADS)
+                ]
+                
+                while not download_complete:
+                    # Actualizar peers periódicamente
                     current_time = time.time()
-                    should_announce = (
+                    check_interval = PEERS_CHECK_INTERVAL_WITH_PEERS if peers else PEERS_CHECK_INTERVAL_NO_PEERS
+                    if current_time - last_peers_check > check_interval:
+                        if not peers:
+                            logger.info("[DOWNLOAD] Buscando peers del tracker...")
+                        
+                        new_peers = await self.tracker_manager.get_peers_async(torrent_hash)
+                        new_peers = self._filter_self_from_peers(new_peers)
+                        
+                        if new_peers:
+                            old_peer_count = len(peers)
+                            peers = new_peers
+                            torrent_info.peers_total = len(peers)
+                            
+                            # Limpiar fallos de peers antiguos
+                            failed_peers.clear()
+                            
+                            if old_peer_count == 0:
+                                logger.info(f"[DOWNLOAD] ✅ Peers encontrados: {len(peers)}")
+                            else:
+                                logger.info(f"[DOWNLOAD] Peers actualizados: {old_peer_count} → {len(peers)}")
+                        elif not peers:
+                            logger.warning("[DOWNLOAD] Sin peers disponibles - esperando...")
+                        
+                        last_peers_check = current_time
+                    
+                    # Anunciar progreso si toca
+                    current_time = time.time()
+                    if downloaded > 0 and (
                         downloaded % ANNOUNCE_CHUNK_INTERVAL == 0 or
                         (current_time - last_announce_time) >= ANNOUNCE_INTERVAL
-                    )
-                    
-                    if should_announce and downloaded < len(missing_chunks):
-                        bytes_downloaded = downloaded * torrent_info.chunk_size
-                        bytes_left = torrent_info.file_size - bytes_downloaded
-                        
-                        logger.debug(
-                            f"[DOWNLOAD] Anunciando progreso: "
-                            f"{downloaded}/{torrent_info.total_chunks} chunks, "
-                            f"{bytes_left} bytes restantes"
-                        )
+                    ):
+                        bytes_downloaded = (initial_downloaded_chunks + downloaded) * torrent_info.chunk_size
+                        bytes_left = max(torrent_info.file_size - bytes_downloaded, 0)
                         
                         await self.tracker_manager.announce_async(
                             info_hash=torrent_hash,
@@ -667,21 +958,65 @@ class TorrentClient:
                             left=bytes_left
                         )
                         last_announce_time = current_time
+                    
+                    # Actualizar estadísticas
+                    with stats_lock:
+                        torrent_info.downloaded_chunks = initial_downloaded_chunks + downloaded
+                        torrent_info.state = "downloading" if peers else "stalled"
                         
-                        # Actualizar lista de peers (pueden haber nuevos)
-                        new_peers = await self.tracker_manager.get_peers_async(torrent_hash)
-                        if new_peers and len(new_peers) > len(peers):
-                            logger.info(f"[DOWNLOAD] Peers actualizados: {len(new_peers)} disponibles")
-                            peers = new_peers
-                else:
-                    logger.warning(f"[DOWNLOAD] Falló descarga de chunk {chunk_idx}")
+                        elapsed = max(time.time() - start_time, 0.001)
+                        rate_bps = session_downloaded_bytes / elapsed
+                        torrent_info.download_rate = rate_bps / 1024
+                        
+                        downloaded_total_bytes = (initial_downloaded_chunks + downloaded) * torrent_info.chunk_size
+                        remaining_bytes = max(torrent_info.file_size - downloaded_total_bytes, 0)
+                        torrent_info.eta_seconds = (remaining_bytes / rate_bps) if rate_bps > 0 else None
+                        
+                        # Imprimir progreso cada 50 chunks
+                        if downloaded > 0 and downloaded % 50 == 0:
+                            progress = (downloaded / len(missing_chunks)) * 100
+                            logger.info(
+                                f"[DOWNLOAD] Progreso: {downloaded}/{len(missing_chunks)} ({progress:.1f}%) - "
+                                f"Pendientes: {pending_chunks.qsize()} - Rate: {torrent_info.download_rate:.1f} KB/s"
+                            )
+                        
+                        # Verificar si descarga está completa
+                        if downloaded >= len(missing_chunks):
+                            download_complete = True
+                            logger.info(f"[DOWNLOAD] ✅ Descarga completa: {downloaded}/{len(missing_chunks)} chunks")
+                    
+                    # Si no hay progreso por bastante tiempo, buscar nuevos peers
+                    if consecutive_no_progress >= MAX_NO_PROGRESS_CYCLES and peers:
+                        logger.warning("[DOWNLOAD] Sin progreso hace bastante tiempo...")
+                        consecutive_no_progress = 0
+                        last_peers_check = current_time - 25  # Forzar siguiente actualización de peers
+                    
+                    # Dar tiempo a los workers
+                    await asyncio.sleep(1)
+                
+                # Enviar sentinelas para shutdown de workers
+                for _ in range(MAX_PARALLEL_DOWNLOADS):
+                    await pending_chunks.put(None)
+                
+                # Esperar a que terminen todos los workers
+                await asyncio.gather(*worker_tasks, return_exceptions=True)
+            
+            # Ejecutar monitoreo y descargas
+            await monitor_and_download()
             
             # 5. Verificar si está completo
-            if downloaded == len(missing_chunks):
+            with stats_lock:
+                final_downloaded = downloaded
+            
+            if download_complete:
+                # ✅ Todos los chunks fueron descargados
                 torrent_info.is_seeding = True
                 torrent_info.downloaded_chunks = torrent_info.total_chunks
+                torrent_info.state = "completed"
+                torrent_info.download_rate = 0.0
+                torrent_info.eta_seconds = 0.0
                 
-                logger.info(f"✅ [DOWNLOAD] Descarga completa: {torrent_info.file_name}")
+                logger.info(f"✅ [DOWNLOAD] Descarga completa: {torrent_info.file_name} ({final_downloaded}/{len(missing_chunks)} chunks)")
                 
                 # Anunciar completado al tracker (event=completed)
                 await self.tracker_manager.announce_async(
@@ -692,11 +1027,26 @@ class TorrentClient:
                     left=0
                 )
             else:
+                # Descarga incompleta - pero con guardado de chunks para futuros reintentos
+                if torrent_info.state != "paused":
+                    torrent_info.state = "paused"
                 logger.warning(
-                    f"[DOWNLOAD] Descarga incompleta: {downloaded}/{len(missing_chunks)} chunks"
+                    f"[DOWNLOAD] Descarga pausada: {final_downloaded}/{len(missing_chunks)} chunks completados. "
+                    f"Los chunks se mantienen guardados, se reanudarán cuando haya peers disponibles."
                 )
-                
+        except asyncio.CancelledError:
+            torrent_info = self._torrents.get(torrent_hash)
+            if torrent_info and not torrent_info.is_seeding:
+                torrent_info.state = "paused"
+                torrent_info.download_rate = 0.0
+                torrent_info.eta_seconds = None
+            logger.info(f"[DOWNLOAD] Descarga cancelada: {torrent_hash[:8]}")
         except Exception as e:
+            torrent_info = self._torrents.get(torrent_hash)
+            if torrent_info:
+                torrent_info.state = "error"
+                torrent_info.download_rate = 0.0
+                torrent_info.eta_seconds = None
             logger.error(f"[DOWNLOAD] Error en descarga: {e}", exc_info=True)
     
     async def _write_chunk(self, file_path: str, chunk_idx: int, chunk_data: bytes, chunk_size: int):
@@ -725,4 +1075,28 @@ class TorrentClient:
     
     def stop(self):
         """Detiene el cliente"""
+        for torrent_hash, task in list(self._download_tasks.items()):
+            if task and not task.done():
+                task.cancel()
+        self._download_tasks.clear()
+
+        if self._peer_server_future and not self._peer_server_future.done():
+            self._peer_server_future.cancel()
+
+        if self._loop and self._loop.is_running():
+            stop_future = self._run_async_in_thread(self.tracker_manager.stop())
+            if stop_future:
+                try:
+                    stop_future.result(timeout=5)
+                except Exception as e:
+                    logger.warning(f"Error deteniendo TrackerManager: {e}")
+
+            self._loop.call_soon_threadsafe(self._loop.stop)
+
+        if self._loop_thread and self._loop_thread.is_alive():
+            self._loop_thread.join(timeout=5)
+
+        self._initialized = False
+        self._peer_server_started = False
+        self._peer_server_future = None
         logger.info("TorrentClient detenido")

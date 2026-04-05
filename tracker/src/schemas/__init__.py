@@ -5,3 +5,4 @@ from .torrent import (
     TorrentTable as TorrentTable,
     PeerTable as PeerTable,
 )
+from .replica_assignment import ReplicaAssignmentTable as ReplicaAssignmentTable

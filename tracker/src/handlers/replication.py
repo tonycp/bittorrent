@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import List, Dict, Any
 from dependency_injector.wiring import Provide
 import base64
+import json
 import logging
+
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from bit_lib.handlers import BaseHandler
 from bit_lib.tools.controller import controller
@@ -38,7 +42,7 @@ class ReplicationHandler(BaseHandler):
         self.peer_repo = peer_repo
         self.torrent_repo = torrent_repo
         self.event_repo = event_repo
-
+        self._snapshot_chunks: Dict[str, Dict[str, Any]] = {}
     # hdl_key: "Replication:update:peer_announce"
     @update(dtos.PEER_ANNOUNCE_DATASET)
     async def peer_announce(
@@ -158,7 +162,6 @@ class ReplicationHandler(BaseHandler):
         Esto permite reconciliar particiones de red cuando se reconectan.
         """
         import logging
-        from src.models import EventLog
         from src.schemas.torrent import TorrentTable
         from bit_lib.context import VectorClock
         
@@ -167,16 +170,19 @@ class ReplicationHandler(BaseHandler):
         applied = 0
         skipped = 0
         errors = []
+        applied_event_ids: list[str] = []
 
         for event in events:
             try:
                 # Los eventos pueden venir como dict o como EventLog (Pydantic)
                 if isinstance(event, dict):
+                    event_id = str(event.get("id")) if event.get("id") is not None else None
                     operation = event.get("operation")
                     data = event.get("data", {})
                     event_vc_dict = event.get("vector_clock", {})
                     event_timestamp = event.get("timestamp", 0)
                 else:
+                    event_id = str(getattr(event, "id", "")) if getattr(event, "id", None) is not None else None
                     # Es un objeto EventLog
                     operation = event.operation
                     data = event.data
@@ -184,7 +190,7 @@ class ReplicationHandler(BaseHandler):
                     event_timestamp = event.timestamp if hasattr(event, "timestamp") else 0
 
                 if not operation:
-                    logging.warning(f"Event without operation")
+                    logging.warning("Event without operation")
                     errors.append({"event": "missing_operation", "error": "No operation field"})
                     continue
 
@@ -266,17 +272,20 @@ class ReplicationHandler(BaseHandler):
                     continue
 
                 applied += 1
+                if event_id:
+                    applied_event_ids.append(event_id)
+
+                # Persistir por evento para evitar perder progreso si uno falla
+                await self.torrent_repo.session.flush()
+                await self.torrent_repo.session.commit()
 
             except Exception as e:
                 logging.error(f"Error applying replicated event: {e}", exc_info=True)
+                try:
+                    await self.torrent_repo.session.rollback()
+                except Exception:
+                    pass
                 errors.append({"event": str(event), "error": str(e)})
-
-        # Flush para asegurar que los cambios se persisten
-        try:
-            await self.torrent_repo.session.flush()
-            logging.debug(f"Flushed session after applying {applied} events")
-        except Exception as e:
-            logging.warning(f"Error flushing session: {e}")
 
         logging.info(
             f"Applied {applied}/{len(events)} events from {source_tracker_id}, "
@@ -286,6 +295,7 @@ class ReplicationHandler(BaseHandler):
         return DataResponse(
             data={
                 "applied": applied,
+                "applied_event_ids": applied_event_ids,
                 "skipped": skipped,
                 "errors": errors,
                 "source_tracker": source_tracker_id,
@@ -296,8 +306,12 @@ class ReplicationHandler(BaseHandler):
         """Obtiene el VectorClock local actual desde el último evento"""
         from bit_lib.context import VectorClock
         import os
-        
-        tracker_id = os.getenv("TRACKER_ID", "tracker-unknown")
+
+        tracker_id = (
+            os.getenv("SERVICES__TRACKER_ID")
+            or os.getenv("TRACKER_ID")
+            or "tracker-unknown"
+        )
         
         # Obtener último evento local
         latest_event = await self.event_repo.get_latest_by_tracker(tracker_id)
@@ -333,32 +347,62 @@ class ReplicationHandler(BaseHandler):
         snapshot_id: str,
         block_index: int,
         total_size: int,
-        chunk_data: str,  # base64 encoded
+        chunk_data: str,
     ):
-        """Recibe chunk de snapshot (parte de snapshot binario grande)"""
+        """Recibe chunks base64, recompone snapshot y ejecuta replicate_snapshot."""
         try:
-            # Decodificar base64
             decoded_data = base64.b64decode(chunk_data.encode("utf-8"))
 
+            state = self._snapshot_chunks.setdefault(
+                snapshot_id,
+                {
+                    "source_tracker_id": source_tracker_id,
+                    "total_size": total_size,
+                    "chunks": {},
+                },
+            )
+            state["chunks"][block_index] = decoded_data
+
+            received_size = sum(len(chunk) for chunk in state["chunks"].values())
             logger.debug(
                 f"Recibido chunk {block_index} de snapshot {snapshot_id} "
-                f"({len(decoded_data)} bytes de {total_size})"
+                f"({received_size}/{total_size} bytes)"
             )
 
-            # Aquí se llama a ReplicationService._handle_binary con los datos
-            # Pero como esto es en el handler, necesitamos una forma de pasar esto
-            # a ReplicationService. Por ahora, loguear y asumir que el service
-            # se encargará de reconstituir cuando complete.
+            if received_size < total_size:
+                return DataResponse(
+                    data={
+                        "status": "chunk_received",
+                        "snapshot_id": snapshot_id,
+                        "block_index": block_index,
+                    }
+                )
+
+            ordered_blocks = [
+                state["chunks"][idx] for idx in sorted(state["chunks"].keys())
+            ]
+            snapshot_bytes = b"".join(ordered_blocks)[:total_size]
+            snapshot_data = json.loads(snapshot_bytes.decode("utf-8"))
+
+            await self.replicate_snapshot(
+                source_tracker_id=snapshot_data["source_tracker_id"],
+                vector_clock=snapshot_data["vector_clock"],
+                torrents=snapshot_data.get("torrents", []),
+                peers=snapshot_data.get("peers", []),
+            )
+
+            self._snapshot_chunks.pop(snapshot_id, None)
 
             return DataResponse(
                 data={
-                    "status": "chunk_received",
+                    "status": "snapshot_applied",
                     "snapshot_id": snapshot_id,
-                    "block_index": block_index,
+                    "total_chunks": len(ordered_blocks),
                 }
             )
         except Exception as e:
-            logger.error(f"Error procesando chunk de snapshot: {e}")
+            logger.error(f"Error procesando chunk de snapshot: {e}", exc_info=True)
+            self._snapshot_chunks.pop(snapshot_id, None)
             return DataResponse(
                 data={
                     "status": "error",
@@ -369,28 +413,55 @@ class ReplicationHandler(BaseHandler):
     # hdl_key: "Replication:get:request_snapshot"
     @get(dtos.REQUEST_SNAPSHOT_DATASET)
     async def request_snapshot(self, tracker_id: str):
-        """Solicita snapshot completo del estado actual (para tracker nuevo)"""
-        # Obtener todos los torrents y peers desde repos
-        # TODO: implementar list_all en repos si no existe
-        torrents = []  # await self.torrent_repo.list_all()
-        peers = []  # await self.peer_repo.list_all()
-
-        # Obtener el VC más reciente de este tracker
-        last_event = await self.event_repo.get_latest_by_tracker(tracker_id)
+        """Solicita snapshot completo del estado actual (para tracker nuevo)."""
+        from src.schemas.torrent import TorrentTable, PeerTable
         from bit_lib.context import VectorClock
 
-        vc = (
-            last_event.vector_clock
-            if last_event
-            else VectorClock(clock={tracker_id: 0})
-        )
+        torrent_stmt = select(TorrentTable).options(selectinload(TorrentTable.peers))
+        torrent_result = await self.torrent_repo.session.execute(torrent_stmt)
+        torrent_rows = torrent_result.scalars().all()
+
+        peer_stmt = select(PeerTable)
+        peer_result = await self.peer_repo.session.execute(peer_stmt)
+        peer_rows = peer_result.scalars().all()
+
+        last_event = await self.event_repo.get_latest_by_tracker(tracker_id)
+        vc = last_event.vector_clock if last_event else VectorClock(clock={tracker_id: 0}).to_dict()
+
+        torrents = [
+            {
+                "info_hash": torrent.info_hash,
+                "name": torrent.name,
+                "size": torrent.size,
+                "chunks": torrent.chunks,
+                "piece_length": torrent.piece_length,
+                "peer_ids": [peer.peer_identifier for peer in (torrent.peers or [])],
+            }
+            for torrent in torrent_rows
+        ]
+
+        peers = [
+            {
+                "peer_identifier": peer.peer_identifier,
+                "ip": peer.ip,
+                "port": peer.port,
+                "uploaded": peer.uploaded,
+                "downloaded": peer.downloaded,
+                "left": peer.left,
+                "is_seed": peer.is_seed,
+                "last_announce": peer.last_announce,
+                "status": peer.status,
+                "protocol_version": peer.protocol_version,
+            }
+            for peer in peer_rows
+        ]
 
         return DataResponse(
             data={
                 "source_tracker_id": tracker_id,
-                "vector_clock": vc.to_dict() if hasattr(vc, "to_dict") else vc,
-                "torrents": [t.model_dump() for t in torrents],
-                "peers": [p.model_dump() for p in peers],
+                "vector_clock": vc,
+                "torrents": torrents,
+                "peers": peers,
             }
         )
 
@@ -400,22 +471,76 @@ class ReplicationHandler(BaseHandler):
         self,
         source_tracker_id: str,
         vector_clock: Dict[str, int],
-        torrents: List,  # List[Torrent] after validation
-        peers: List,  # List[Peer] after validation
+        torrents: List,
+        peers: List,
     ):
-        """Aplica snapshot inicial de otro tracker (para inicializar tracker nuevo)"""
-        # Aplicar peers
+        """Aplica snapshot inicial de otro tracker (torrents + peers + relaciones)."""
+        from src.schemas.torrent import TorrentTable
+
+        applied_torrents = 0
+        applied_peers = 0
+        linked_relations = 0
+
+        # 1) Upsert torrents base
+        for torrent in torrents:
+            torrent_data = torrent.model_dump() if hasattr(torrent, "model_dump") else torrent
+            info_hash = torrent_data.get("info_hash") or torrent_data.get("hash")
+            if not info_hash:
+                continue
+
+            existing = await self.torrent_repo.get(info_hash)
+            if not existing:
+                await self.torrent_repo.add(
+                    TorrentTable(
+                        info_hash=info_hash,
+                        name=torrent_data.get("name"),
+                        size=torrent_data.get("size", 0),
+                        chunks=torrent_data.get("chunks", 0),
+                        piece_length=torrent_data.get("piece_length", 262144),
+                    )
+                )
+                applied_torrents += 1
+
+        # 2) Upsert peers
         for peer in peers:
             peer_data = peer.model_dump() if hasattr(peer, "model_dump") else peer
-            await self.peer_repo.upsert(**peer_data)
+            peer_identifier = peer_data.get("peer_identifier") or peer_data.get("peer_id")
+            if not peer_identifier:
+                continue
 
-        # Aplicar torrents
-        for torrent in torrents:
-            torrent_data = (
-                torrent.model_dump() if hasattr(torrent, "model_dump") else torrent
+            await self.peer_repo.upsert(
+                peer_id=peer_identifier,
+                ip=peer_data.get("ip", "0.0.0.0"),
+                port=peer_data.get("port", 0),
+                uploaded=peer_data.get("uploaded", 0),
+                downloaded=peer_data.get("downloaded", 0),
+                left=peer_data.get("left", 0),
+                is_seed=peer_data.get("is_seed", False),
             )
-            # TODO: implementar create/upsert en torrent_repo
-            pass
+            applied_peers += 1
+
+        # 3) Reasociar peers a torrents
+        for torrent in torrents:
+            torrent_data = torrent.model_dump() if hasattr(torrent, "model_dump") else torrent
+            info_hash = torrent_data.get("info_hash") or torrent_data.get("hash")
+            for peer_id in torrent_data.get("peer_ids", []):
+                try:
+                    linked = await self.torrent_repo.add_peer_to_torrent(
+                        info_hash=info_hash,
+                        peer_identifier=peer_id,
+                    )
+                    if linked:
+                        linked_relations += 1
+                except Exception:
+                    logger.debug(
+                        f"No se pudo vincular peer {peer_id} al torrent {info_hash} desde snapshot",
+                        exc_info=True,
+                    )
+
+        logger.info(
+            f"Snapshot aplicado desde {source_tracker_id}: torrents={applied_torrents}, "
+            f"peers={applied_peers}, links={linked_relations}"
+        )
 
         return DataResponse(
             data={
@@ -423,6 +548,9 @@ class ReplicationHandler(BaseHandler):
                 "source_tracker": source_tracker_id,
                 "torrents_count": len(torrents),
                 "peers_count": len(peers),
+                "applied_torrents": applied_torrents,
+                "applied_peers": applied_peers,
+                "linked_relations": linked_relations,
                 "vector_clock": vector_clock,
             }
         )

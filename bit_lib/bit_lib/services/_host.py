@@ -7,12 +7,13 @@ import asyncio
 
 
 class HostService(BitService, ABC):
-    def __init__(self, host: str, port: int, **kwargs):
+    def __init__(self, host: str, port: int, loop: Optional[asyncio.AbstractEventLoop] = None, **kwargs):
         super().__init__(**kwargs)
 
         self.host = host
         self.port = port
-        self.loop = asyncio.get_event_loop()
+        # Usar el loop proporcionado si está disponible, sino obtener el actual
+        self.loop = loop or asyncio.get_event_loop()
         self.server: Optional[asyncio.base_events.Server] = None
 
     async def run(self):

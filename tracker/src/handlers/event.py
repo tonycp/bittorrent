@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 from dependency_injector.wiring import Provide
 
-from bit_lib.models import EventSuccess
+from bit_lib.models import DataResponse
 from bit_lib.handlers import BaseHandler
 from bit_lib.tools.controller import controller
 from bit_lib.handlers.crud import get, create, update
@@ -11,11 +11,12 @@ from bit_lib.errors import ServiceError
 from bit_lib.context import CacheManager, VectorClock
 
 from src.models import EventLog
-from src.repos import RepoContainer, EventLogRepository
+from src.repos import RepoContainer, EventLogRepository, ReplicaAssignmentRepository
 
 from . import dtos
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,23 @@ class EventHandler(BaseHandler):
     def __init__(
         self,
         event_repo: EventLogRepository = Provide[RepoContainer.event_log_repo],
+        replica_assignment_repo: ReplicaAssignmentRepository = Provide[
+            RepoContainer.replica_assignment_repo
+        ],
     ):
         super().__init__()
         self.event_repo = event_repo
+        self.replica_assignment_repo = replica_assignment_repo
 
         # Caché de VectorClock por tracker con TTL de 30s
         self._vc_cache = CacheManager(default_ttl=30, name="event_vc_cache")
+
+    def _resolve_tracker_id(self) -> str:
+        return (
+            os.getenv("SERVICES__TRACKER_ID")
+            or os.getenv("TRACKER_ID")
+            or "tracker-unknown"
+        )
 
     async def get_current_vc(self, tracker_id: str) -> VectorClock:
         """Obtiene VectorClock actual para un tracker desde su último evento"""
@@ -39,13 +51,26 @@ class EventHandler(BaseHandler):
             """Fetch function que obtiene VC del último evento"""
             recent_event = await self.event_repo.get_latest_by_tracker(tracker_id)
             if recent_event:
-                return recent_event.vector_clock
+                vc = recent_event.vector_clock
+                if isinstance(vc, VectorClock):
+                    return vc
+                if isinstance(vc, dict):
+                    if "clock" in vc and isinstance(vc.get("clock"), dict):
+                        return VectorClock.from_dict(vc)
+                    return VectorClock(clock=vc)
+                return VectorClock(clock={tracker_id: 0})
             else:
                 return VectorClock(clock={tracker_id: 0})
 
         vc = await self._vc_cache.get_or_fetch(tracker_id, fetch_vc)
 
-        return vc if vc else VectorClock(clock={tracker_id: 0})
+        if isinstance(vc, VectorClock):
+            return vc
+        if isinstance(vc, dict):
+            if "clock" in vc and isinstance(vc.get("clock"), dict):
+                return VectorClock.from_dict(vc)
+            return VectorClock(clock=vc)
+        return VectorClock(clock={tracker_id: 0})
 
     def _should_apply(self, local_vc: VectorClock, remote_vc: VectorClock) -> bool:
         """Valida orden causal: retorna True si remote_vc puede aplicarse"""
@@ -63,10 +88,7 @@ class EventHandler(BaseHandler):
     async def pending_events(self):
         """Obtiene eventos pendientes de replicación para este tracker"""
         try:
-            import os
-            from src.models import EventLog
-
-            tracker_id = os.getenv("TRACKER_ID", "tracker-unknown")
+            tracker_id = self._resolve_tracker_id()
 
             # Obtener eventos recientes que aún no han sido marcados como replicados
             events = await self.event_repo.get_pending_replication_for_tracker(
@@ -80,11 +102,21 @@ class EventHandler(BaseHandler):
 
             logger.info(f"[{tracker_id}] Found {len(events)} pending events")
             
-            # Convertir EventTable (SQLAlchemy) a EventLog (Pydantic) y luego a dict
+            # Convertir EventTable (SQLAlchemy) a dict conservando replicated_to
             events_data = []
             for ev in events:
-                event_model = EventLog.model_validate(ev)
-                events_data.append(event_model.model_dump())
+                event_id = str(ev.id) if getattr(ev, "id", None) is not None else None
+                events_data.append(
+                    {
+                        "id": event_id,
+                        "tracker_id": ev.tracker_id,
+                        "vector_clock": ev.vector_clock or {},
+                        "operation": ev.operation,
+                        "data": ev.data or {},
+                        "timestamp": ev.timestamp,
+                        "replicated_to": ev.replicated_to or {},
+                    }
+                )
 
             return {"events": events_data}
         except Exception as e:
@@ -134,7 +166,7 @@ class EventHandler(BaseHandler):
             event_model = EventLog.model_validate(event)
             
             # Retornar evento completo
-            return EventSuccess(request=event_model.model_dump())
+            return DataResponse(data={"event": event_model.model_dump()})
         except Exception as e:
             logger.error(f"[{tracker_id}] ERROR in create_event: {e}")
             import traceback
@@ -178,4 +210,4 @@ class EventHandler(BaseHandler):
         await self._vc_cache.invalidate(tracker_id)
 
         # Retornar evento para ReplicationHandler
-        return EventSuccess(request=event.model_dump())
+        return DataResponse(data={"event": event.model_dump()})

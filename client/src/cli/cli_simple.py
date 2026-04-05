@@ -6,15 +6,14 @@ CLI Minimalista para client - Usa bit_lib directamente
 import asyncio
 import json
 import logging
-from pathlib import Path
 from typing import Optional, Dict, Any
+
+from bit_lib.services import ClientService
+from bit_lib.models import Request
 
 # Logging
 logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-
-from bit_lib.services import ClientService
-from bit_lib.models import Request
 
 
 class BitTorrentClientCLI(ClientService):
@@ -92,7 +91,7 @@ class BitTorrentClientCLI(ClientService):
                 logger.info(f"✅ Torrent creado: {torrent_hash}")
                 return True
             else:
-                logger.error(f"❌ Fallo al crear torrent")
+                logger.error("❌ Fallo al crear torrent")
                 return False
 
         except Exception as e:
@@ -179,9 +178,9 @@ class BitTorrentClientCLI(ClientService):
                 self.tracker_host, self.tracker_port, req, timeout=10
             )
             if resp and resp.data:
-                logger.info(f"✅ Peer list OK")
+                logger.info("✅ Peer list OK")
                 return resp.data
-            logger.error(f"❌ Peer list sin respuesta")
+            logger.error("❌ Peer list sin respuesta")
             return None
         except Exception as e:
             logger.error(f"❌ Peer list error: {e}", exc_info=True)
@@ -199,9 +198,9 @@ class BitTorrentClientCLI(ClientService):
                 self.tracker_host, self.tracker_port, req, timeout=10
             )
             if resp and resp.data:
-                logger.info(f"✅ Scrape OK")
+                logger.info("✅ Scrape OK")
                 return resp.data
-            logger.error(f"❌ Scrape sin respuesta")
+            logger.error("❌ Scrape sin respuesta")
             return None
         except Exception as e:
             logger.error(f"❌ Scrape error: {e}", exc_info=True)
@@ -222,7 +221,7 @@ class BitTorrentClientCLI(ClientService):
             if resp and resp.data:
                 logger.info(f"✅ Keepalive OK: {resp.data}")
                 return resp.data
-            logger.error(f"❌ Keepalive sin respuesta")
+            logger.error("❌ Keepalive sin respuesta")
             return None
         except Exception as e:
             logger.error(f"❌ Keepalive error: {e}", exc_info=True)
@@ -243,7 +242,7 @@ class BitTorrentClientCLI(ClientService):
             if resp and resp.data:
                 logger.info(f"✅ Disconnect OK: {resp.data}")
                 return resp.data
-            logger.error(f"❌ Disconnect sin respuesta")
+            logger.error("❌ Disconnect sin respuesta")
             return None
         except Exception as e:
             logger.error(f"❌ Disconnect error: {e}", exc_info=True)
@@ -261,9 +260,9 @@ class BitTorrentClientCLI(ClientService):
                 self.tracker_host, self.tracker_port, req, timeout=10
             )
             if resp and resp.data:
-                logger.info(f"✅ File info OK")
+                logger.info("✅ File info OK")
                 return resp.data
-            logger.error(f"❌ File info sin respuesta")
+            logger.error("❌ File info sin respuesta")
             return None
         except Exception as e:
             logger.error(f"❌ File info error: {e}", exc_info=True)
@@ -286,7 +285,7 @@ class BitTorrentClientCLI(ClientService):
 
     async def show_status(self):
         """Muestra estado actual"""
-        print(f"\n📊 Estado del Cliente:")
+        print("\n📊 Estado del Cliente:")
         print("─" * 80)
         print(f"  Tracker: {self.tracker_host}:{self.tracker_port}")
         print(f"  Torrents: {len(self.registered_torrents)}")

@@ -3,3 +3,4 @@ from .torrent import TorrentRepository as TorrentRepository
 from .peer import PeerRepository as PeerRepository
 from .event import EventLogRepository as EventLogRepository
 from .tracker import TrackerRepository as TrackerRepository
+from .replica_assignment import ReplicaAssignmentRepository as ReplicaAssignmentRepository

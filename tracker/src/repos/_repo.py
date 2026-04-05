@@ -1,6 +1,6 @@
 from dependency_injector import containers, providers
 
-from . import peer, torrent, event, tracker
+from . import peer, torrent, event, tracker, replica_assignment
 
 DeclarativeContainer = containers.DeclarativeContainer
 WiringConfiguration = containers.WiringConfiguration
@@ -34,5 +34,10 @@ class RepoContainer(DeclarativeContainer):
 
     tracker_repo = Factory(
         tracker.TrackerRepository,
+        session=gateways.session,
+    )
+
+    replica_assignment_repo = Factory(
+        replica_assignment.ReplicaAssignmentRepository,
         session=gateways.session,
     )

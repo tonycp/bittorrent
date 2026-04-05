@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     python3-tk \
     tk \
     x11-apps \
+    xvfb \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,5 +24,4 @@ EXPOSE 6881
 EXPOSE 5678
 
 # Run sync with extras (bit_lib) on container start, then run the app
-ENTRYPOINT ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && exec \"$@\"", "sh"]
-CMD ["uv", "run", "python", "src/client/client_standalone.py"]
+ENTRYPOINT ["/bin/sh", "-c", "uv sync --extra libs --no-managed-python && uv run client"]

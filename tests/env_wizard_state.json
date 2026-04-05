@@ -1,0 +1,40 @@
+{
+  "history": [
+    {
+      "hash": "fc3d912c7f107e63e1e085d31367ef348d9cd6dad177574ce8eca8cfc243f58c",
+      "timestamp": "2026-03-31T20:15:48.992486+00:00",
+      "args": [
+        "up",
+        "--network",
+        "torrent_net",
+        "--subnet",
+        "172.29.0.0/24",
+        "--trackers",
+        "4",
+        "--clients",
+        "2",
+        "--rpc-start-port",
+        "5555",
+        "--peer-start-port",
+        "6881",
+        "--debug-start-port",
+        "5678",
+        "--no-build",
+        "--with-gui",
+        "--display",
+        ":1",
+        "--auto-xhost"
+      ]
+    },
+    {
+      "hash": "cb667e6cedd4e9f5cc7da4d1cb4617a95f5449fda9b3209a056559fae2083e5a",
+      "timestamp": "2026-03-31T20:17:15.921124+00:00",
+      "args": [
+        "down",
+        "--network",
+        "torrent_net",
+        "--no-remove-volumes"
+      ]
+    }
+  ]
+}

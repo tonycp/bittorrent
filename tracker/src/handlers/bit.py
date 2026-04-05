@@ -29,6 +29,15 @@ class BitHandler(BaseHandler):
         self.peer_repo = peer_repo
         self.request_handler = None  # Se asigna desde TrackerService
 
+    def _resolve_tracker_id(self) -> str:
+        import os
+
+        return (
+            os.getenv("SERVICES__TRACKER_ID")
+            or os.getenv("TRACKER_ID")
+            or "tracker-unknown"
+        )
+
     @create(dtos.ANNOUNCE_DATASET)
     async def announce(
         self,
@@ -122,14 +131,13 @@ class BitHandler(BaseHandler):
 
     async def _create_event(self, operation: str, data: dict):
         """Helper para crear eventos que se replicarán entre trackers via callback"""
-        import os
         from bit_lib.models import Request
         
         if not self.request_handler:
             logger.warning("No request_handler available, skipping event creation")
             return
         
-        tracker_id = os.getenv("TRACKER_ID", "tracker-unknown")
+        tracker_id = self._resolve_tracker_id()
         
         try:
             # Crear request para EventHandler
@@ -144,7 +152,9 @@ class BitHandler(BaseHandler):
                 },
             )
             # Llamar directamente al handler del servidor principal
-            await self.request_handler(req)
+            result = await self.request_handler(req)
+            if getattr(result, "type", None) == "error":
+                logger.warning(f"[{tracker_id}] Error response creando evento {operation}: {result}")
             logger.debug(f"[{tracker_id}] Evento creado: {operation}")
         except Exception as e:
             logger.warning(f"[{tracker_id}] Error creando evento: {e}")

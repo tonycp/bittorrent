@@ -22,7 +22,11 @@ class RegisterHandler(BaseHandler):
     ):
         super().__init__()
         self.torrent_repo = torrent_repo
-        self.tracker_id = os.environ.get("TRACKER_ID", "tracker-1")
+        self.tracker_id = (
+            os.environ.get("SERVICES__TRACKER_ID")
+            or os.environ.get("TRACKER_ID")
+            or "tracker-unknown"
+        )
         self.request_handler = None  # Se asigna desde TrackerService
 
     @get(dtos.FILE_INFO_DATASET)
@@ -125,6 +129,8 @@ class RegisterHandler(BaseHandler):
             logging.info(f"[{self.tracker_id}] Calling request_handler")
             # Llamar directamente al handler del servidor principal
             result = await self.request_handler(req)
+            if getattr(result, "type", None) == "error":
+                logging.warning(f"[{self.tracker_id}] Error response creando evento {operation}: {result}")
             logging.info(f"[{self.tracker_id}] Evento creado: {operation}, result={result}")
         except Exception as e:
             import traceback
