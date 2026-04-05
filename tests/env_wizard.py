@@ -225,7 +225,7 @@ def ensure_network(name: str, subnet: str) -> None:
     if name in existing:
         print(f"Red '{name}' ya existe. Se reutiliza.")
         return
-    run(["docker", "network", "create", "--subnet", subnet, name])
+    run(["docker", "network", "create", "-d", "overlay", "--subnet", subnet, name])
 
 
 def list_container_names() -> list[str]:
