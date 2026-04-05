@@ -80,23 +80,23 @@ class BitHandler(BaseHandler):
 
             if event == "stopped":
                 await self.torrent_repo.remove_peer_from_torrent(info_hash, peer_id)
-                
+
                 # Generar evento para replicación
                 await self._create_event(
                     operation="peer_stopped",
                     data={
                         "torrent_hash": info_hash,
                         "peer_id": peer_id,
-                    }
+                    },
                 )
-                
+
                 # Si se detiene, devolvemos una lista vacía o mínima rápidamente
                 return DataResponse(data={"interval": 1800, "peers": []})
 
             if event == "started" or not event:
                 # Asegurar que esté vinculado (por si el registro se perdió o es nuevo)
                 await self.torrent_repo.add_peer_to_torrent(info_hash, peer_id)
-                
+
                 # Generar evento para replicación
                 await self._create_event(
                     operation="peer_announce",
@@ -108,7 +108,7 @@ class BitHandler(BaseHandler):
                         "left": left,
                         "uploaded": 0,
                         "downloaded": 0,
-                    }
+                    },
                 )
 
             # IMPORTANTE: Filtrar para no enviarse a sí mismo (peer_id)
@@ -132,13 +132,13 @@ class BitHandler(BaseHandler):
     async def _create_event(self, operation: str, data: dict):
         """Helper para crear eventos que se replicarán entre trackers via callback"""
         from bit_lib.models import Request
-        
+
         if not self.request_handler:
             logger.warning("No request_handler available, skipping event creation")
             return
-        
+
         tracker_id = self._resolve_tracker_id()
-        
+
         try:
             # Crear request para EventHandler
             req = Request(
@@ -154,7 +154,9 @@ class BitHandler(BaseHandler):
             # Llamar directamente al handler del servidor principal
             result = await self.request_handler(req)
             if getattr(result, "type", None) == "error":
-                logger.warning(f"[{tracker_id}] Error response creando evento {operation}: {result}")
+                logger.warning(
+                    f"[{tracker_id}] Error response creando evento {operation}: {result}"
+                )
             logger.debug(f"[{tracker_id}] Evento creado: {operation}")
         except Exception as e:
             logger.warning(f"[{tracker_id}] Error creando evento: {e}")

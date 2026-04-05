@@ -101,7 +101,7 @@ class EventHandler(BaseHandler):
                 return {"events": []}
 
             logger.info(f"[{tracker_id}] Found {len(events)} pending events")
-            
+
             # Convertir EventTable (SQLAlchemy) a dict conservando replicated_to
             events_data = []
             for ev in events:
@@ -132,13 +132,11 @@ class EventHandler(BaseHandler):
         data: Dict[str, Any],
     ):
         """Crea evento local (genérico para cualquier operación)"""
-        logger.info(
-            f"[{tracker_id}] create_event called: operation={operation}"
-        )
+        logger.info(f"[{tracker_id}] create_event called: operation={operation}")
 
         try:
             from src.schemas import EventTable
-            
+
             current_vc = await self.get_current_vc(tracker_id)
             current_vc.increment(tracker_id)
 
@@ -151,25 +149,32 @@ class EventHandler(BaseHandler):
             )
 
             event = await self.event_repo.add(event)
-            
+
             # Flush para asignar ID
             await self.event_repo.session.flush()
-            
+
+            # Commit para persistir en disco
+            await self.event_repo.session.commit()
+
             # Ahora el event tiene id, created_at, updated_at
-            logger.info(f"[{tracker_id}] Event after flush: id={event.id}, created_at={event.created_at}")
+            logger.info(
+                f"[{tracker_id}] Event after flush: id={event.id}, created_at={event.created_at}"
+            )
 
             # Invalidar caché después de crear evento
             await self._vc_cache.invalidate(tracker_id)
 
             # Convertir EventTable a dict para EventSuccess
             from src.models import EventLog
+
             event_model = EventLog.model_validate(event)
-            
+
             # Retornar evento completo
             return DataResponse(data={"event": event_model.model_dump()})
         except Exception as e:
             logger.error(f"[{tracker_id}] ERROR in create_event: {e}")
             import traceback
+
             logger.error(f"[{tracker_id}] Traceback: {traceback.format_exc()}")
             raise
 

@@ -50,12 +50,10 @@ def _models_validate(func_name, data: Data, dataset: DataSet) -> Dict[str, Valid
     def _validate(item):
         key, value = item
         try:
-            # Pasar sin validar cuando el tipo declarado es Any
             if dataset[key] is Any:
                 return key, value
             if dataset[key] is BaseModel:
                 return key, dataset[key].model_validate(value)
-            # Si el valor es None y el tipo es Optional, permitirlo directamente
             if value is None:
                 return key, value
             adapter = TypeAdapter(dataset[key])
